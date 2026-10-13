@@ -1,11 +1,13 @@
 ﻿#include "render/renderer.hpp"
 #include "render/shaders.hpp"
+#include "render/font.hpp"
 
 #include "sokol_app.h"
 #include "sokol_gfx.h"
 #include "sokol_glue.h"
 
 #include <cstdio>
+#include <cstring>
 
 namespace inc::render {
 
@@ -159,7 +161,6 @@ void Renderer::set_layer(Layer l) {
 void Renderer::end_frame() {
     if (!initialized_) return;
 
-    // Close the currently open batch.
     if (vert_count_ > current_batch_start_ && batch_count_ < MAX_BATCHES) {
         batches_[batch_count_++] = {
             current_batch_start_,
@@ -169,7 +170,6 @@ void Renderer::end_frame() {
     }
 
     if (vert_count_ > 0 && batch_count_ > 0) {
-        // Project every vertex into NDC in-place.
         Mat3 proj = build_projection(window_w_, window_h_);
         for (int i = 0; i < vert_count_; ++i) {
             Vtx& v = cpu_verts_[i];
@@ -178,7 +178,6 @@ void Renderer::end_frame() {
             v.y = ndc.y;
         }
 
-        // Upload the whole vertex buffer once.
         sg_buffer vb{};
         vb.id = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(vertex_buffer_));
 
@@ -191,13 +190,6 @@ void Renderer::end_frame() {
         wb.size          = n_bytes;
         sg_write_buffer_transient(&wb);
 
-        // -----------------------------------------------------------------
-        // CRITICAL: sg_apply_pipeline RESETS the bindings cache in sokol_gfx.
-        // We MUST call sg_apply_bindings AFTER every sg_apply_pipeline.
-        // If bindings are applied once before the loop, only the first
-        // batch would have a vertex buffer, and even that gets clobbered
-        // the moment we switch to the second pipeline.
-        // -----------------------------------------------------------------
         sg_bindings bind{};
         bind.vertex_buffers[0] = vb;
 
@@ -209,7 +201,7 @@ void Renderer::end_frame() {
                 b.layer == Layer::Alpha ? pipeline_alpha_ : pipeline_additive_));
             sg_apply_pipeline(pip);
 
-            sg_apply_bindings(&bind);   // <-- re-bind after pipeline switch
+            sg_apply_bindings(&bind);
 
             sg_draw(b.start, b.count, 1);
         }
@@ -294,6 +286,60 @@ void Renderer::draw_arc_ring(Vec2 center, f32 r_inner, f32 r_outer,
                   center + d0 * r_outer,
                   color);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Text
+// ---------------------------------------------------------------------------
+
+f32 Renderer::text_width(const char* str, f32 pixel_size) const {
+    if (!str) return 0.0f;
+    int n = 0;
+    while (str[n]) ++n;
+    if (n == 0) return 0.0f;
+    // n glyphs, each `FONT_ADVANCE` wide, minus one trailing advance.
+    return (f32(n) * f32(FONT_ADVANCE) - 1.0f) * pixel_size;
+}
+
+void Renderer::draw_text(Vec2 pos, const char* str, f32 pixel_size, Color color) {
+    if (!str) return;
+
+    const f32 px = pixel_size;
+    f32 x = pos.x;
+
+    while (*str) {
+        const unsigned char c = static_cast<unsigned char>(*str);
+        if (c < FONT_FIRST_CHAR || c > FONT_LAST_CHAR) {
+            x += f32(FONT_ADVANCE) * px;
+            ++str;
+            continue;
+        }
+
+        const u8* glyph = FONT_5X7[c - FONT_FIRST_CHAR];
+        for (int row = 0; row < FONT_GLYPH_HEIGHT; ++row) {
+            const u8 bits = glyph[row];
+            for (int col = 0; col < FONT_GLYPH_WIDTH; ++col) {
+                if (bits & (1 << (FONT_GLYPH_WIDTH - 1 - col))) {
+                    const f32 gx = x + f32(col) * px;
+                    const f32 gy = pos.y + f32(row) * px;
+                    draw_quad({ gx,           gy           },
+                              { gx + px,      gy           },
+                              { gx + px,      gy + px      },
+                              { gx,           gy + px      },
+                              color);
+                }
+            }
+        }
+
+        x += f32(FONT_ADVANCE) * px;
+        ++str;
+    }
+}
+
+void Renderer::draw_text_centered(Vec2 pos, const char* str,
+                                  f32 pixel_size, Color color) {
+    const f32 w = text_width(str, pixel_size);
+    draw_text({ pos.x - w * 0.5f, pos.y }, str, pixel_size, color);
 }
 
 } // namespace inc::render

@@ -20,9 +20,6 @@ public:
     Renderer(const Renderer&)            = delete;
     Renderer& operator=(const Renderer&) = delete;
 
-    // ---- Layer / blend mode --------------------------------------------
-    // Alpha:      standard over-blending. Everything opaque-ish.
-    // Additive:   src + dst. Every draw call emits light. Used for glow.
     enum class Layer { Alpha, Additive };
 
     void init(const InitDesc& desc);
@@ -44,6 +41,19 @@ public:
                        f32 a_start, f32 a_end,
                        Color color, int segments = 16);
 
+    // ---- Text ----------------------------------------------------------
+    // Draws `str` starting at `pos` (top-left of the first glyph).
+    // `pixel_size` is the size in virtual pixels of one font-grid pixel;
+    // a full glyph is (5 * pixel_size) wide by (7 * pixel_size) tall.
+    void draw_text(Vec2 pos, const char* str, f32 pixel_size, Color color);
+
+    // Like draw_text, but `pos` is treated as the horizontal CENTER of the
+    // text and the vertical TOP of the first glyph.
+    void draw_text_centered(Vec2 pos, const char* str, f32 pixel_size, Color color);
+
+    // Total width in virtual pixels of the rendered string.
+    [[nodiscard]] f32 text_width(const char* str, f32 pixel_size) const;
+
 private:
     void add_vertex(Vec2 p, Color color);
 
@@ -57,7 +67,6 @@ private:
     Vtx  cpu_verts_[MAX_VERTS];
     int  vert_count_ = 0;
 
-    // Batches: contiguous runs of vertices sharing a blend layer.
     struct Batch { int start; int count; Layer layer; };
     static constexpr int MAX_BATCHES = 8;
     Batch batches_[MAX_BATCHES];
