@@ -420,7 +420,7 @@ void App::draw_log_overlay(render::Renderer& r) const {
     const f32 text_x = panel_left + 40.0f;
     const f32 text_y0 = panel_top + 115.0f;
     constexpr f32 LINE_PX = 2.0f;
-    constexpr int CHARS_PER_LINE = 90;
+    constexpr int CHARS_PER_LINE = 72;
     constexpr f32 LINE_H = 34.0f;
 
     int line = 0;
