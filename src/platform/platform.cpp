@@ -1,4 +1,4 @@
-﻿#include "platform/platform.hpp"
+#include "platform/platform.hpp"
 
 #include "sokol_app.h"
 #include "sokol_time.h"
@@ -6,9 +6,9 @@
 #include <cstring>
 
 // ---------------------------------------------------------------------------
-// This file owns the input state and converts sokol_app events into our
-// Key enum. It exports three C-linkage bridge functions that main.cpp calls
-// from within sokol_app's callbacks.
+// This file owns input state and translates sokol_app events into our Key
+// enum. It exposes three C-linkage bridge functions that main.cpp calls
+// from sokol_app's callbacks.
 // ---------------------------------------------------------------------------
 
 namespace inc::platform {
@@ -47,6 +47,7 @@ Key translate_key(sapp_keycode k) {
         case SAPP_KEYCODE_X: return Key::X;
         case SAPP_KEYCODE_Y: return Key::Y;
         case SAPP_KEYCODE_Z: return Key::Z;
+
         case SAPP_KEYCODE_0: return Key::Num0;
         case SAPP_KEYCODE_1: return Key::Num1;
         case SAPP_KEYCODE_2: return Key::Num2;
@@ -57,27 +58,30 @@ Key translate_key(sapp_keycode k) {
         case SAPP_KEYCODE_7: return Key::Num7;
         case SAPP_KEYCODE_8: return Key::Num8;
         case SAPP_KEYCODE_9: return Key::Num9;
+
         case SAPP_KEYCODE_LEFT:  return Key::Left;
         case SAPP_KEYCODE_RIGHT: return Key::Right;
         case SAPP_KEYCODE_UP:    return Key::Up;
         case SAPP_KEYCODE_DOWN:  return Key::Down;
+
         case SAPP_KEYCODE_SPACE:  return Key::Space;
         case SAPP_KEYCODE_ENTER:  return Key::Enter;
         case SAPP_KEYCODE_ESCAPE: return Key::Escape;
         case SAPP_KEYCODE_TAB:    return Key::Tab;
+
         case SAPP_KEYCODE_LEFT_SHIFT:    return Key::ShiftL;
         case SAPP_KEYCODE_RIGHT_SHIFT:   return Key::ShiftR;
         case SAPP_KEYCODE_LEFT_CONTROL:  return Key::CtrlL;
         case SAPP_KEYCODE_RIGHT_CONTROL: return Key::CtrlR;
         case SAPP_KEYCODE_LEFT_ALT:      return Key::AltL;
         case SAPP_KEYCODE_RIGHT_ALT:     return Key::AltR;
+
         default: return Key::Unknown;
     }
 }
 
 } // anonymous namespace
 
-// Public accessors --------------------------------------------------------
 const InputState& platform_input() { return g_input; }
 
 int   window_width()   { return sapp_width();  }
@@ -89,10 +93,15 @@ double time_seconds() {
     return stm_sec(stm_now()) - g_start_time;
 }
 
-// Internal handlers called by the C bridge below --------------------------
+void consume_pressed() {
+    std::memset(g_input.key_pressed,  0, sizeof(g_input.key_pressed));
+    std::memset(g_input.key_released, 0, sizeof(g_input.key_released));
+}
+
 void handle_event_internal(const sapp_event* ev) {
     switch (ev->type) {
         case SAPP_EVENTTYPE_KEY_DOWN: {
+            if (ev->key_repeat) break;
             const Key k = translate_key(ev->key_code);
             if (k != Key::Unknown) {
                 const int idx = static_cast<int>(k);

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <cstdint>
 #include <string>
@@ -52,5 +52,10 @@ struct WindowDesc {
 
 // NEW: read-only access to the current frame's input state.
 [[nodiscard]] const InputState& platform_input();
+
+// Clears the per-frame "key_pressed" and "key_released" edges. Must be
+// called after the first simulation substep of a frame so subsequent
+// substeps within the same frame do not see the same edge twice.
+void consume_pressed();
 
 } // namespace inc::platform

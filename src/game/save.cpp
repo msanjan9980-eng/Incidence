@@ -21,6 +21,7 @@ bool save_game(const std::string& path, const Character& ch, int current_room) {
         "  \"foc\": %d,\n"
         "  \"chg\": %d,\n"
         "  \"drf\": %d,\n"
+        "  \"skills\": %d,\n"
         "  \"room\": %d\n"
         "}\n",
         ch.level,
@@ -31,6 +32,7 @@ bool save_game(const std::string& path, const Character& ch, int current_room) {
         ch.stats.focus,
         ch.stats.charge,
         ch.stats.drift,
+        int(ch.learned_skills),
         current_room);
 
     std::fclose(f);
@@ -79,6 +81,7 @@ bool load_game(const std::string& path, SaveData& out) {
 
     int lv = 1, xp = 0, pts = 0, skp = 0;
     int arc = 3, foc = 3, chg = 3, drf = 3, room = 0;
+    int skills = 0;
 
     find_int(buf, "\"lv\"",  lv);
     find_int(buf, "\"xp\"",  xp);
@@ -88,6 +91,7 @@ bool load_game(const std::string& path, SaveData& out) {
     find_int(buf, "\"foc\"", foc);
     find_int(buf, "\"chg\"", chg);
     find_int(buf, "\"drf\"", drf);
+    find_int(buf, "\"skills\"", skills);
     find_int(buf, "\"room\"", room);
 
     // Clamp to sane ranges.
@@ -110,6 +114,7 @@ bool load_game(const std::string& path, SaveData& out) {
     out.character.stats.focus  = foc;
     out.character.stats.charge = chg;
     out.character.stats.drift  = drf;
+    out.character.learned_skills = u16(skills & 0x7FFF);
     out.current_room           = room;
     out.has_save               = true;
     return true;

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.24)
+﻿cmake_minimum_required(VERSION 3.24)
 
 project(incidence
     VERSION 0.1.0
@@ -52,7 +52,8 @@ add_executable(incidence
     src/game/room.cpp
     src/game/warden.cpp
     src/game/character.cpp
-    src/game/save.cpp)
+    src/game/save.cpp
+    src/game/skill.cpp)
 
 target_include_directories(incidence PRIVATE
     ${CMAKE_SOURCE_DIR}/src
@@ -72,6 +73,7 @@ set_source_files_properties(
     src/game/warden.cpp
     src/game/character.cpp
     src/game/save.cpp
+    src/game/skill.cpp
     PROPERTIES COMPILE_OPTIONS "${INCIDENCE_CXX_FLAGS}")
 
 set_source_files_properties(

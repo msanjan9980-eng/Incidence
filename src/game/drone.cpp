@@ -1,4 +1,4 @@
-﻿#include "game/drone.hpp"
+#include "game/drone.hpp"
 #include "game/character.hpp"
 #include "render/renderer.hpp"
 
@@ -14,7 +14,8 @@ void Drone::step(f32 dt, const Character& ch,
 {
     // ---- Read stats ---------------------------------------------------
     shield_span = ch.shield_span_rad();
-    const f32 spin_speed = ch.spin_speed();
+    f32 spin_speed = ch.spin_speed();
+    if (ch.has_skill(SkillId::RotateInstinct)) spin_speed *= 1.25f;
 
     // ---- Dash cooldown ------------------------------------------------
     if (dash_cd > 0.0f) dash_cd -= dt;

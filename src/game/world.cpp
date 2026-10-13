@@ -9,7 +9,24 @@
 
 namespace inc::game {
 
-// XP value awarded per enemy type on kill.
+// Skill helper functions.
+static f32 reflect_speed_mult(const Character& ch) {
+    f32 m = 1.0f;
+    if (ch.has_skill(SkillId::HeavyShot))   m *= 0.75f;
+    if (ch.has_skill(SkillId::CurvedFacet)) m *= 1.10f;
+    return m;
+}
+
+static f32 damage_mult(const Character& ch, int bounces) {
+    f32 m = 1.0f;
+    if (ch.has_skill(SkillId::PerfectReflection)) {
+        for (int i = 0; i < bounces; ++i) m *= 1.15f;
+    }
+    if (ch.has_skill(SkillId::HeavyShot)) m *= 1.60f;
+    if (ch.has_skill(SkillId::KleinLock) && bounces >= 2) m *= 1.50f;
+    return m;
+}
+
 static int xp_for_enemy(EnemyType type) {
     switch (type) {
         case EnemyType::Lancer: return 40;
@@ -155,17 +172,11 @@ void World::award_kill_xp(EnemyType type) {
     if (gained > 0) {
         levelup_banner_timer_ = 2.0f;
         levelup_banner_level_ = character_.level;
-        // Auto-save on level-up so progress is never lost.
         save_game("save.sav", character_, current_room_);
     }
 }
 
-// ---------------------------------------------------------------------------
-// Simulation
-// ---------------------------------------------------------------------------
-
 void World::step(f32 dt, const platform::InputState& input) {
-    // Banner timer ticks even while paused-ish states run.
     if (levelup_banner_timer_ > 0.0f) {
         levelup_banner_timer_ -= dt;
         if (levelup_banner_timer_ < 0.0f) levelup_banner_timer_ = 0.0f;
@@ -178,11 +189,58 @@ void World::step(f32 dt, const platform::InputState& input) {
         return input.key_down[static_cast<int>(k)];
     };
 
+    if (character_.has_skill(SkillId::FrameShift) &&
+        input.key_pressed[static_cast<int>(platform::Key::F)]) {
+        drone_.heading = wrap_pi(drone_.heading + PI);
+    }
+
+    if (character_.has_skill(SkillId::VoidFacet) &&
+        input.key_pressed[static_cast<int>(platform::Key::V)]) {
+        f32 best_d2 = 400.0f * 400.0f;
+        Projectile* best = nullptr;
+        for (auto& p : projectiles_) {
+            if (!p.alive) continue;
+            const f32 d2 = (p.pos - drone_.position).length_sq();
+            if (d2 < best_d2) { best_d2 = d2; best = &p; }
+        }
+        if (best) { spawn_flash(best->pos); best->alive = false; }
+    }
+
     drone_.step(dt, character_,
                 kc(platform::Key::Left),  kc(platform::Key::Right),
                 kc(platform::Key::Up),    kc(platform::Key::Down),
                 kc(platform::Key::Q),     kc(platform::Key::E),
                 kc(platform::Key::Space));
+
+    if (character_.has_skill(SkillId::Singularity)) {
+        for (auto& p : projectiles_) {
+            if (!p.alive) continue;
+            Vec2 to_drone = drone_.position - p.pos;
+            const f32 d = to_drone.length();
+            if (d > 1.0f && d < 600.0f) {
+                const f32 strength = 40.0f * (1.0f - d / 600.0f);
+                p.vel += to_drone * (strength * dt / d);
+            }
+        }
+    }
+
+    if (character_.has_skill(SkillId::GravityWell)) {
+        for (auto& p : projectiles_) {
+            if (!p.alive || p.bounces == 0) continue;
+            f32 best_d2 = 700.0f * 700.0f;
+            const Turret* best = nullptr;
+            for (int i = 0; i < turret_count_; ++i) {
+                if (!turrets_[i].alive) continue;
+                const f32 d2 = (turrets_[i].pos - p.pos).length_sq();
+                if (d2 < best_d2) { best_d2 = d2; best = &turrets_[i]; }
+            }
+            if (best) {
+                Vec2 to_t = best->pos - p.pos;
+                const f32 d = to_t.length();
+                if (d > 1.0f) p.vel += to_t * (120.0f * dt / d);
+            }
+        }
+    }
 
     if (warden_active_) {
         step_warden(dt);
@@ -218,12 +276,8 @@ void World::step(f32 dt, const platform::InputState& input) {
     }
 
     if (warden_active_) {
-        if (!warden_.alive && warden_death_timer_ < 0.0f) {
-            warden_death_timer_ = 0.0f;
-        }
-        if (warden_death_timer_ >= 0.0f) {
-            warden_death_timer_ += dt;
-        }
+        if (!warden_.alive && warden_death_timer_ < 0.0f) warden_death_timer_ = 0.0f;
+        if (warden_death_timer_ >= 0.0f) warden_death_timer_ += dt;
         return;
     }
 
@@ -245,7 +299,6 @@ void World::step(f32 dt, const platform::InputState& input) {
             } else {
                 const int next = current_room_ + 1;
                 load_room(next);
-                // Auto-save on room advance.
                 save_game("save.sav", character_, next);
             }
         }
@@ -317,10 +370,6 @@ void World::step_warden(f32 dt) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Collision helpers
-// ---------------------------------------------------------------------------
-
 bool World::collide_with_walls(Projectile& p) {
     if (p.wall_bounces_left <= 0) return false;
     for (int i = 0; i < wall_count_; ++i) {
@@ -380,12 +429,10 @@ bool World::resolve_warden_collisions(Projectile& p) {
         }
         return true;
     }
-
     return false;
 }
 
 bool World::resolve_collisions(Projectile& p) {
-    // ---- Screen boundary ----------------------------------------------
     if (p.wall_bounces_left > 0) {
         bool bounced = false;
         if (p.pos.x < p.radius)              { p.pos.x = p.radius;              p.vel.x = -p.vel.x; bounced = true; }
@@ -405,7 +452,6 @@ bool World::resolve_collisions(Projectile& p) {
     collide_with_walls(p);
     if (resolve_warden_collisions(p)) return true;
 
-    // ---- Shield --------------------------------------------------------
     {
         Vec2 to_bullet = p.pos - drone_.position;
         const f32 dist  = to_bullet.length();
@@ -429,10 +475,7 @@ bool World::resolve_collisions(Projectile& p) {
                     audio::play_shield_reflect(last_incidence_deg_);
 
                     p.vel = reflect(p.vel, n);
-
-                    // CHARGE stat multiplies the reflected bullet's speed.
-                    p.vel *= character_.reflect_multiplier();
-                    // Cap to avoid runaway acceleration from repeated hits.
+                    p.vel *= character_.reflect_multiplier() * reflect_speed_mult(character_);
                     const f32 out_speed = p.vel.length();
                     constexpr f32 MAX_OUT = 2200.0f;
                     if (out_speed > MAX_OUT) p.vel = p.vel * (MAX_OUT / out_speed);
@@ -442,13 +485,37 @@ bool World::resolve_collisions(Projectile& p) {
 
                     ++p.bounces;
                     spawn_flash(p.pos);
+
+                    if (character_.has_skill(SkillId::PrismFacet)) {
+                        constexpr f32 spread = 0.35f;
+                        const Vec2 v0 = p.vel.rotated(-spread);
+                        const Vec2 v1 = p.vel.rotated(+spread);
+                        const Vec2 saved_p = p.pos;
+                        const int  saved_b = p.bounces;
+                        const int  saved_w = p.wall_bounces_left;
+                        const Vec2 extra[2] = { v0, v1 };
+                        for (const Vec2& nv : extra) {
+                            for (auto& q : projectiles_) {
+                                if (!q.alive) {
+                                    q.pos               = saved_p;
+                                    q.vel               = nv;
+                                    q.age               = 0.0f;
+                                    q.bounces           = saved_b;
+                                    q.wall_bounces_left = saved_w;
+                                    q.core_color        = COLOR_CORE_INNER;
+                                    q.glow_color        = COLOR_FACET_EDGE;
+                                    q.alive             = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
                     return false;
                 }
             }
         }
     }
 
-    // ---- Core ----------------------------------------------------------
     {
         Vec2 to_bullet = p.pos - drone_.position;
         if (to_bullet.length() < Drone::CORE_RADIUS + p.radius) {
@@ -460,14 +527,15 @@ bool World::resolve_collisions(Projectile& p) {
         }
     }
 
-    // ---- Turrets -------------------------------------------------------
     for (int i = 0; i < turret_count_; ++i) {
         Turret& t = turrets_[i];
         if (!t.alive) continue;
         Vec2 delta = p.pos - t.pos;
         if (delta.length() < t.radius + p.radius) {
             p.alive = false;
-            t.hp--;
+            const f32 dmg = damage_mult(character_, p.bounces);
+            const int hp_lost = (int(dmg) > 1) ? int(dmg) : 1;
+            t.hp -= hp_lost;
             if (t.hp <= 0) {
                 t.alive = false;
                 kills_++;
@@ -479,13 +547,8 @@ bool World::resolve_collisions(Projectile& p) {
             return true;
         }
     }
-
     return false;
 }
-
-// ---------------------------------------------------------------------------
-// Drawing
-// ---------------------------------------------------------------------------
 
 void World::draw(render::Renderer& r) const {
     r.set_layer(render::Renderer::Layer::Alpha);
@@ -536,7 +599,6 @@ void World::draw(render::Renderer& r) const {
     for (const auto& p : projectiles_) p.draw(r);
     drone_.draw(r);
 
-    // ---- Additive glow -------------------------------------------------
     r.set_layer(render::Renderer::Layer::Additive);
 
     for (const auto& p : projectiles_) {
@@ -561,18 +623,14 @@ void World::draw(render::Renderer& r) const {
         r.draw_circle(t.pos, t.radius + 16.0f, with_alpha(glow, 30), 22);
     }
 
-    // ---- HUD -----------------------------------------------------------
     r.set_layer(render::Renderer::Layer::Alpha);
 
-    // HP bars (top-left).
     for (int i = 0; i < player_hp_; ++i) {
         const f32 x = 30.0f + f32(i) * 26.0f;
         const f32 y = 30.0f;
         r.draw_quad({ x,      y      }, { x + 20, y      },
                     { x + 20, y + 12 }, { x,      y + 12 }, COLOR_CORE_EDGE);
     }
-
-    // Kills (below HP).
     for (int i = 0; i < kills_ && i < 20; ++i) {
         const f32 x = 30.0f + f32(i) * 16.0f;
         const f32 y = 56.0f;
@@ -580,27 +638,22 @@ void World::draw(render::Renderer& r) const {
                     { x + 10, y + 10 }, { x,      y + 10 }, COLOR_ENEMY_EDGE);
     }
 
-    // ---- Level + XP bar (below kills) ---------------------------------
     {
         const f32 LVL_X = 30.0f;
         const f32 LVL_Y = 86.0f;
-
         char lv_buf[16];
         std::snprintf(lv_buf, sizeof(lv_buf), "LV %d", character_.level);
         r.draw_text({ LVL_X, LVL_Y }, lv_buf, 2.2f, COLOR_CORE_INNER);
 
-        // XP bar to the right of "LV N".
         const f32 bar_x = LVL_X + 90.0f;
         const f32 bar_y = LVL_Y + 4.0f;
         const f32 bar_w = 160.0f;
         const f32 bar_h = 10.0f;
-
         r.draw_quad({ bar_x,         bar_y         },
                     { bar_x + bar_w, bar_y         },
                     { bar_x + bar_w, bar_y + bar_h },
                     { bar_x,         bar_y + bar_h },
                     with_alpha(COLOR_CORE_EDGE, 40));
-
         const f32 fill = bar_w * character_.xp_progress();
         if (fill > 0.5f) {
             r.draw_quad({ bar_x,        bar_y         },
@@ -610,33 +663,36 @@ void World::draw(render::Renderer& r) const {
                         COLOR_CORE_EDGE);
         }
 
-        // Stat-points pulse indicator if any available.
         if (character_.stat_points > 0) {
             const f32 pulse = 0.5f + 0.5f * std::sin(platform::time_seconds() * 6.0f);
             const Vec2 c { bar_x + bar_w + 20.0f, bar_y + bar_h * 0.5f };
             r.draw_circle(c, 6.0f + pulse * 2.0f,
-                          with_alpha(COLOR_CORE_INNER,
-                                     u8(180 + 75 * pulse)), 14);
+                          with_alpha(COLOR_CORE_INNER, u8(180 + 75 * pulse)), 14);
             r.draw_ring(c, 9.0f, 11.0f,
-                        with_alpha(COLOR_CORE_EDGE,
-                                   u8(120 + 100 * pulse)), 16);
+                        with_alpha(COLOR_CORE_EDGE, u8(120 + 100 * pulse)), 16);
+        }
+
+        if (character_.skill_points > 0) {
+            const f32 pulse = 0.5f + 0.5f * std::sin(platform::time_seconds() * 5.0f + 1.0f);
+            const Vec2 c { bar_x + bar_w + 60.0f, bar_y + bar_h * 0.5f };
+            r.draw_circle(c, 5.0f + pulse * 2.0f,
+                          with_alpha(COLOR_LEAD_EDGE, u8(160 + 75 * pulse)), 14);
+            r.draw_ring(c, 8.0f, 10.0f,
+                        with_alpha(COLOR_LEAD_EDGE, u8(100 + 100 * pulse)), 16);
         }
     }
 
-    // ---- Score bar (top-right) -----------------------------------------
     {
         constexpr f32 BAR_X = 1580.0f;
         constexpr f32 BAR_Y = 30.0f;
         constexpr f32 BAR_W = 300.0f;
         constexpr f32 BAR_H = 12.0f;
         const f32 SCORE_MAX = f32(ROOM_COUNT + 1) * 40000.0f;
-
         r.draw_quad({ BAR_X,           BAR_Y           },
                     { BAR_X + BAR_W,   BAR_Y           },
                     { BAR_X + BAR_W,   BAR_Y + BAR_H   },
                     { BAR_X,           BAR_Y + BAR_H   },
                     with_alpha(COLOR_SCORE_BAR, 40));
-
         const f32 fill_w = BAR_W * clamp(f32(score_) / SCORE_MAX, 0.0f, 1.0f);
         if (fill_w > 0.5f) {
             r.draw_quad({ BAR_X,             BAR_Y           },
@@ -652,7 +708,6 @@ void World::draw(render::Renderer& r) const {
         }
     }
 
-    // ---- Room indicator (top-center) -----------------------------------
     {
         constexpr f32 CX = VIRTUAL_W * 0.5f;
         constexpr f32 CY = 40.0f;
@@ -679,19 +734,16 @@ void World::draw(render::Renderer& r) const {
         }
     }
 
-    // ---- Warden HP bar --------------------------------------------------
     if (warden_active_ && warden_.alive) {
         constexpr f32 BAR_W = 700.0f;
         constexpr f32 BAR_H = 18.0f;
         constexpr f32 BAR_X = (VIRTUAL_W - BAR_W) * 0.5f;
         constexpr f32 BAR_Y = VIRTUAL_H - 60.0f;
-
         r.draw_quad({ BAR_X,         BAR_Y         },
                     { BAR_X + BAR_W, BAR_Y         },
                     { BAR_X + BAR_W, BAR_Y + BAR_H },
                     { BAR_X,         BAR_Y + BAR_H },
                     with_alpha(COLOR_ENEMY_EDGE, 60));
-
         const f32 fill_w = BAR_W * clamp(f32(warden_.hp) / f32(warden_.hp_max), 0.0f, 1.0f);
         if (fill_w > 0.5f) {
             const f32 hp_ratio = f32(warden_.hp) / f32(warden_.hp_max);
@@ -709,7 +761,6 @@ void World::draw(render::Renderer& r) const {
         }
     }
 
-    // ---- Room-clear pulse ----------------------------------------------
     if (!warden_active_ && room_clear_timer_ >= 0.0f) {
         const f32 t = clamp(room_clear_timer_ / 2.0f, 0.0f, 1.0f);
         const f32 radius = 30.0f + t * 700.0f;
@@ -718,24 +769,19 @@ void World::draw(render::Renderer& r) const {
                     with_alpha(COLOR_CORE_INNER, a), 40);
     }
 
-    // ---- Level-up banner -----------------------------------------------
     if (levelup_banner_timer_ > 0.0f) {
-        const f32 t = 1.0f - (levelup_banner_timer_ / 2.0f);   // 0 -> 1 over 2 s
-        const f32 alpha = clamp(1.0f - t * t, 0.0f, 1.0f);      // fade out
-
+        const f32 t = 1.0f - (levelup_banner_timer_ / 2.0f);
+        const f32 alpha = clamp(1.0f - t * t, 0.0f, 1.0f);
         const f32 cx = VIRTUAL_W * 0.5f;
         const f32 cy = VIRTUAL_H * 0.42f;
-
         char buf[32];
         std::snprintf(buf, sizeof(buf), "LEVEL %d", levelup_banner_level_);
-
         r.set_layer(render::Renderer::Layer::Alpha);
         r.draw_text_centered({ cx, cy }, buf, 7.5f,
                              with_alpha(COLOR_CORE_INNER, u8(alpha * 255.0f)));
-        r.draw_text_centered({ cx, cy + 90.0f }, "+1 STAT POINT",
+        r.draw_text_centered({ cx, cy + 90.0f }, "+1 STAT POINT  +1 SKILL POINT",
                              2.4f,
                              with_alpha(COLOR_FACET_EDGE, u8(alpha * 220.0f)));
-
         r.set_layer(render::Renderer::Layer::Additive);
         r.draw_circle({ cx, cy + 30.0f }, 320.0f,
                       with_alpha(COLOR_CORE_EDGE, u8(alpha * 40.0f)), 40);

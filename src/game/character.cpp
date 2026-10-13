@@ -73,4 +73,22 @@ bool Character::spend_point(int index) {
     return true;
 }
 
+bool Character::can_learn(SkillId id) const noexcept {
+    if (skill_points <= 0) return false;
+    if (has_skill(id))     return false;
+
+    const SkillNode& node = skill_node(id);
+    if (level < node.min_level) return false;
+
+    if (node.prereq != SkillId::None && !has_skill(node.prereq)) return false;
+    return true;
+}
+
+bool Character::learn_skill(SkillId id) {
+    if (!can_learn(id)) return false;
+    learned_skills |= u16(1u << int(id));
+    --skill_points;
+    return true;
+}
+
 } // namespace inc::game
