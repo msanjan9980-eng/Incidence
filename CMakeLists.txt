@@ -44,6 +44,7 @@ add_executable(incidence
     src/app/app.cpp
     src/platform/platform.cpp
     src/render/renderer.cpp
+    src/audio/audio.cpp
     src/game/drone.cpp
     src/game/projectile.cpp
     src/game/turret.cpp
@@ -60,6 +61,7 @@ set_source_files_properties(
     src/app/app.cpp
     src/platform/platform.cpp
     src/render/renderer.cpp
+    src/audio/audio.cpp
     src/game/drone.cpp
     src/game/projectile.cpp
     src/game/turret.cpp

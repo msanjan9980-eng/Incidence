@@ -9,6 +9,7 @@
 #include "game/projectile.hpp"
 #include "game/room.hpp"
 #include "game/warden.hpp"
+#include "game/screen.hpp"
 
 namespace inc::render { class Renderer; }
 namespace inc::platform { struct InputState; }
@@ -35,6 +36,8 @@ public:
     [[nodiscard]] i32  score()      const noexcept { return score_; }
     [[nodiscard]] int  room_index() const noexcept { return current_room_; }
     [[nodiscard]] bool warden_active() const noexcept { return warden_active_; }
+    [[nodiscard]] bool player_dead() const noexcept { return player_dead_; }
+    [[nodiscard]] bool warden_defeated() const noexcept { return warden_defeated_; }
 
 private:
     void load_room(int index);
@@ -69,8 +72,13 @@ private:
     int  kills_     = 0;
     i32  score_     = 0;
 
+    bool player_dead_       = false;
+    bool warden_defeated_   = false;
+
     f32  room_clear_timer_    = -1.0f;
     f32  warden_death_timer_  = -1.0f;
+    f32  death_screen_timer_  = 0.0f;
+    f32  victory_screen_timer_= 0.0f;
     f32  last_incidence_deg_  = 0.0f;
 };
 

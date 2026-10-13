@@ -1,6 +1,7 @@
 ﻿#include "game/world.hpp"
 #include "render/renderer.hpp"
 #include "platform/platform.hpp"
+#include "audio/audio.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -19,6 +20,10 @@ void World::reset() {
     score_           = 0;
     current_room_    = 0;
     warden_active_   = false;
+    player_dead_     = false;
+    warden_defeated_ = false;
+    death_screen_timer_   = 0.0f;
+    victory_screen_timer_ = 0.0f;
     load_room(0);
 }
 
@@ -115,9 +120,7 @@ void World::spawn_bullet(Vec2 pos, Vec2 dir, f32 speed,
 
 void World::spawn_flash(Vec2 pos) {
     for (auto& f : flashes_) {
-        if (!f.alive) {
-            f.pos = pos; f.age = 0.0f; f.alive = true; return;
-        }
+        if (!f.alive) { f.pos = pos; f.age = 0.0f; f.alive = true; return; }
     }
 }
 
@@ -126,6 +129,10 @@ void World::spawn_flash(Vec2 pos) {
 // ---------------------------------------------------------------------------
 
 void World::step(f32 dt, const platform::InputState& input) {
+    // If the run is over, freeze the sim. App handles screen transitions.
+    if (player_dead_)     { death_screen_timer_   += dt; return; }
+    if (warden_defeated_) { victory_screen_timer_ += dt; return; }
+
     const auto kc = [&](platform::Key k) {
         return input.key_down[static_cast<int>(k)];
     };
@@ -135,11 +142,10 @@ void World::step(f32 dt, const platform::InputState& input) {
                 kc(platform::Key::Up),    kc(platform::Key::Down),
                 kc(platform::Key::Q),     kc(platform::Key::E));
 
-    // ---- Warden ------------------------------------------------------------------
+    // ---- Warden or turrets ----------------------------------------------
     if (warden_active_) {
         step_warden(dt);
     } else {
-        // ---- Regular turrets ------------------------------------------------------
         for (int i = 0; i < turret_count_; ++i) {
             Turret& t = turrets_[i];
             if (!t.alive) continue;
@@ -152,6 +158,7 @@ void World::step(f32 dt, const platform::InputState& input) {
                     spawn_bullet(t.pos + dir * (t.radius + 4.0f), dir,
                                  t.bullet_speed, t.wall_bounces_per_bullet,
                                  t.bullet_core, t.bullet_glow);
+                    audio::play_enemy_fire();
                 }
             }
         }
@@ -178,9 +185,6 @@ void World::step(f32 dt, const platform::InputState& input) {
         }
         if (warden_death_timer_ >= 0.0f) {
             warden_death_timer_ += dt;
-            if (warden_death_timer_ >= 3.0f) {
-                reset();
-            }
         }
         return;
     }
@@ -212,28 +216,25 @@ void World::step_warden(f32 dt) {
 
     const bool wants_fire = warden_.step(dt);
 
-    // ---- Firing --------------------------------------------------------
     if (wants_fire && warden_.alive) {
         const Vec2 drone_pos = drone_.position;
         const Vec2 to_drone = drone_pos - warden_.pos;
 
         switch (warden_.phase) {
             case 1: {
-                // Single aimed shot.
                 const f32 d = to_drone.length();
                 if (d > 1e-3f) {
                     Vec2 dir = to_drone * (1.0f / d);
                     spawn_bullet(warden_.pos + dir * (Warden::CORE_RADIUS + 6.0f),
                                  dir, 350.0f, 4,
                                  COLOR_CORE_INNER, COLOR_CORE_EDGE);
+                    audio::play_enemy_fire();
                 }
                 break;
             }
             case 2: {
-                // Twin predictive shots, slightly angled apart.
                 const f32 d = to_drone.length();
                 if (d > 1e-3f) {
-                    // Predict drone position given bullet flight time.
                     f32 flight = d / 420.0f;
                     Vec2 predicted = drone_pos;
                     for (int k = 0; k < 2; ++k) {
@@ -241,7 +242,7 @@ void World::step_warden(f32 dt) {
                         flight = (predicted - warden_.pos).length() / 420.0f;
                     }
                     Vec2 base_dir = (predicted - warden_.pos).normalized();
-                    const f32 spread = 0.14f;   // ~8 degrees
+                    const f32 spread = 0.14f;
                     const f32 angles[2] = { -spread, +spread };
                     for (f32 a : angles) {
                         Vec2 dir = base_dir.rotated(a);
@@ -249,11 +250,11 @@ void World::step_warden(f32 dt) {
                                      dir, 420.0f, 4,
                                      COLOR_LEAD_CORE, COLOR_LEAD_EDGE);
                     }
+                    audio::play_enemy_fire();
                 }
                 break;
             }
             case 3: {
-                // Radial burst of 8 shots.
                 constexpr int N = 8;
                 for (int i = 0; i < N; ++i) {
                     const f32 a = TAU * f32(i) / f32(N) + warden_.rotation;
@@ -262,13 +263,13 @@ void World::step_warden(f32 dt) {
                                  dir, 300.0f, 6,
                                  COLOR_ENEMY_CORE, COLOR_ENEMY_EDGE);
                 }
+                audio::play_enemy_fire();
                 break;
             }
             default: break;
         }
     }
 
-    // ---- Phase flash decay ---------------------------------------------
     if (warden_.phase_flash > 0.0f) {
         warden_.phase_flash -= dt;
         if (warden_.phase_flash < 0.0f) warden_.phase_flash = 0.0f;
@@ -300,12 +301,9 @@ bool World::collide_with_walls(Projectile& p) {
 bool World::resolve_warden_collisions(Projectile& p) {
     if (!warden_active_ || !warden_.alive) return false;
 
-    // ---- Cage facets ----------------------------------------------------
     const int facet = warden_.facet_hit_by(p.pos, p.radius);
     if (facet >= 0) {
-        // Reflect off the facet's outward normal.
         const Vec2 n = warden_.facet_normal(facet);
-        // Only reflect if the bullet is moving toward the cage.
         if (p.vel.dot(n) < 0.0f) {
             p.vel = reflect(p.vel, n);
             p.pos += n * (p.radius + 1.0f);
@@ -314,18 +312,22 @@ bool World::resolve_warden_collisions(Projectile& p) {
         }
     }
 
-    // ---- Core -----------------------------------------------------------
     Vec2 to_core = p.pos - warden_.pos;
     if (to_core.length() < Warden::CORE_RADIUS + p.radius) {
         p.alive = false;
+        const int prev_phase = warden_.phase;
         warden_.damage(1);
+        if (warden_.phase != prev_phase) audio::play_warden_phase();
         spawn_flash(p.pos);
+
         if (warden_.alive) {
             const int b = (p.bounces < 6) ? p.bounces : 6;
             score_ += 50 * (1 << b);
         } else {
             kills_++;
             score_ += 5000;
+            warden_defeated_ = true;
+            audio::play_victory();
             std::fprintf(stderr, "[world] WARDEN DEFEATED\n");
             std::fflush(stderr);
         }
@@ -353,10 +355,8 @@ bool World::resolve_collisions(Projectile& p) {
         }
     }
 
-    // ---- Interior walls --------------------------------------------------
     collide_with_walls(p);
 
-    // ---- Warden cage + core ---------------------------------------------
     if (resolve_warden_collisions(p)) return true;
 
     // ---- Shield ----------------------------------------------------------
@@ -377,6 +377,7 @@ bool World::resolve_collisions(Projectile& p) {
                 if (p.vel.dot(n) < 0.0f) {
                     const f32 cos_i = clamp(-p.vel.normalized().dot(n), -1.0f, 1.0f);
                     last_incidence_deg_ = rad_to_deg(std::acos(cos_i));
+                    audio::play_shield_reflect(last_incidence_deg_);
                     p.vel = reflect(p.vel, n);
                     Vec2 dir_out = to_bullet * (1.0f / (dist < 1e-3f ? 1.0f : dist));
                     p.pos = drone_.position + dir_out * (Drone::SHIELD_R_OUTER + p.radius + 1.0f);
@@ -394,7 +395,10 @@ bool World::resolve_collisions(Projectile& p) {
         if (to_bullet.length() < Drone::CORE_RADIUS + p.radius) {
             p.alive = false;
             player_hp_--;
-            if (player_hp_ <= 0) reset();
+            audio::play_player_hit();
+            if (player_hp_ <= 0) {
+                player_dead_ = true;
+            }
             return true;
         }
     }
@@ -410,6 +414,7 @@ bool World::resolve_collisions(Projectile& p) {
             if (t.hp <= 0) {
                 t.alive = false;
                 kills_++;
+                audio::play_enemy_death();
                 const int b = (p.bounces < 6) ? p.bounces : 6;
                 score_ += 100 * (1 << b);
             }
@@ -424,12 +429,8 @@ bool World::resolve_collisions(Projectile& p) {
 // Drawing
 // ---------------------------------------------------------------------------
 void World::draw(render::Renderer& r) const {
-    // =====================================================================
-    // PASS 1 — ALPHA (opaque-ish geometry)
-    // =====================================================================
     r.set_layer(render::Renderer::Layer::Alpha);
 
-    // Frame
     constexpr f32 W = VIRTUAL_W;
     constexpr f32 H = VIRTUAL_H;
     constexpr f32 T = 3.0f;
@@ -438,19 +439,16 @@ void World::draw(render::Renderer& r) const {
     r.draw_line({ W - T, H - T }, { T, H - T }, T, COLOR_WALL_EDGE);
     r.draw_line({ T, H - T }, { T, T }, T, COLOR_WALL_EDGE);
 
-    // Interior walls
     for (int i = 0; i < wall_count_; ++i) {
         const Wall& w = walls_[i];
         r.draw_line(w.a, w.b, 12.0f, COLOR_WALL_FILL);
         r.draw_line(w.a, w.b,  5.0f, COLOR_WALL_EDGE);
     }
 
-    // Ghost previews
     for (const auto& p : projectiles_) {
         p.draw_predicted(r, drone_, walls_, wall_count_);
     }
 
-    // Hit flashes
     for (const auto& f : flashes_) {
         if (!f.alive) continue;
         const f32 t = f.age / HitFlash::LIFETIME;
@@ -459,7 +457,6 @@ void World::draw(render::Renderer& r) const {
         r.draw_ring(f.pos, radius, radius + 3.0f, with_alpha(COLOR_HIT_FLASH, a), 20);
     }
 
-    // Turrets
     for (int i = 0; i < turret_count_; ++i) {
         const Turret& t = turrets_[i];
         if (!t.alive) continue;
@@ -476,36 +473,23 @@ void World::draw(render::Renderer& r) const {
         t.draw(r, show_tele, tele_target);
     }
 
-    // Warden
     if (warden_active_) warden_.draw(r);
-
-    // Projectiles
     for (const auto& p : projectiles_) p.draw(r);
-
-    // Drone
     drone_.draw(r);
 
-    // =====================================================================
-    // PASS 2 — ADDITIVE (glow)
-    // =====================================================================
+    // ---- Additive glow ---------------------------------------------------
     r.set_layer(render::Renderer::Layer::Additive);
 
-    // Glow behind every projectile.
     for (const auto& p : projectiles_) {
         if (!p.alive) continue;
         r.draw_circle(p.pos, p.radius + 14.0f, with_alpha(p.glow_color, 45), 14);
     }
-
-    // Glow behind the drone core and shield.
     r.draw_circle(drone_.position, Drone::CORE_RADIUS + 22.0f,
                   with_alpha(COLOR_CORE_EDGE, 30), 20);
     r.draw_circle(drone_.position, Drone::SHIELD_R_OUTER + 12.0f,
                   with_alpha(COLOR_FACET_EDGE, 14), 32);
-
-    // Glow behind the Warden cage.
     if (warden_active_) warden_.draw_glow(r);
 
-    // Glow behind turrets.
     for (int i = 0; i < turret_count_; ++i) {
         const Turret& t = turrets_[i];
         if (!t.alive) continue;
@@ -518,9 +502,7 @@ void World::draw(render::Renderer& r) const {
         r.draw_circle(t.pos, t.radius + 16.0f, with_alpha(glow, 30), 22);
     }
 
-    // =====================================================================
-    // PASS 3 — ALPHA (HUD)
-    // =====================================================================
+    // ---- HUD -------------------------------------------------------------
     r.set_layer(render::Renderer::Layer::Alpha);
 
     for (int i = 0; i < player_hp_; ++i) {
@@ -536,7 +518,6 @@ void World::draw(render::Renderer& r) const {
                     { x + 10, y + 10 }, { x,      y + 10 }, COLOR_ENEMY_EDGE);
     }
 
-    // Score bar
     {
         constexpr f32 BAR_X = 1580.0f;
         constexpr f32 BAR_Y = 30.0f;
@@ -565,11 +546,10 @@ void World::draw(render::Renderer& r) const {
         }
     }
 
-    // Room indicator (dots) — includes one extra "boss" dot at the end.
     {
         constexpr f32 CX = VIRTUAL_W * 0.5f;
         constexpr f32 CY = 40.0f;
-        const int DOTS = ROOM_COUNT + 1;   // 9 rooms + 1 boss marker
+        const int DOTS = ROOM_COUNT + 1;
         const f32 SPACING = (DOTS <= 6) ? 24.0f : 16.0f;
         constexpr f32 R = 6.0f;
         const f32 start_x = CX - f32(DOTS - 1) * SPACING * 0.5f;
@@ -577,50 +557,34 @@ void World::draw(render::Renderer& r) const {
         for (int i = 0; i < DOTS; ++i) {
             const Vec2 c { start_x + f32(i) * SPACING, CY };
             const bool is_boss_dot = (i == DOTS - 1);
-
-            bool completed = false;
-            bool current   = false;
-
+            bool completed = false, current = false;
             if (is_boss_dot) {
                 completed = warden_active_ && !warden_.alive;
                 current   = warden_active_ && warden_.alive;
             } else {
-                if (warden_active_) {
-                    completed = true;
-                } else {
-                    completed = (i < current_room_);
-                    current   = (i == current_room_);
-                }
+                if (warden_active_) completed = true;
+                else { completed = (i < current_room_); current = (i == current_room_); }
             }
-
             const Color dot_color = is_boss_dot ? COLOR_ENEMY_EDGE : COLOR_CORE_EDGE;
-
-            if (completed) {
-                r.draw_circle(c, R, with_alpha(dot_color, 140), 12);
-            } else if (current) {
-                r.draw_circle(c, R, dot_color, 12);
-                r.draw_ring(c, R + 2.0f, R + 4.0f, dot_color, 16);
-            } else {
-                r.draw_ring(c, R - 1.0f, R, with_alpha(dot_color, 100), 12);
-            }
+            if (completed)      r.draw_circle(c, R, with_alpha(dot_color, 140), 12);
+            else if (current)   { r.draw_circle(c, R, dot_color, 12);
+                                  r.draw_ring(c, R + 2.0f, R + 4.0f, dot_color, 16); }
+            else                r.draw_ring(c, R - 1.0f, R, with_alpha(dot_color, 100), 12);
         }
     }
 
-    // Warden HP bar
     if (warden_active_ && warden_.alive) {
         constexpr f32 BAR_W = 700.0f;
         constexpr f32 BAR_H = 18.0f;
         constexpr f32 BAR_X = (VIRTUAL_W - BAR_W) * 0.5f;
         constexpr f32 BAR_Y = VIRTUAL_H - 60.0f;
 
-        // Background
         r.draw_quad({ BAR_X,         BAR_Y         },
                     { BAR_X + BAR_W, BAR_Y         },
                     { BAR_X + BAR_W, BAR_Y + BAR_H },
                     { BAR_X,         BAR_Y + BAR_H },
                     with_alpha(COLOR_ENEMY_EDGE, 60));
 
-        // Fill
         const f32 fill_w = BAR_W * clamp(f32(warden_.hp) / f32(warden_.hp_max), 0.0f, 1.0f);
         if (fill_w > 0.5f) {
             const f32 hp_ratio = f32(warden_.hp) / f32(warden_.hp_max);
@@ -631,8 +595,6 @@ void World::draw(render::Renderer& r) const {
                         { BAR_X,           BAR_Y + BAR_H },
                         fill);
         }
-
-        // Phase threshold markers at 1/3 and 2/3
         for (int i = 1; i <= 2; ++i) {
             const f32 tx = BAR_X + BAR_W * f32(i) / 3.0f;
             r.draw_line({ tx, BAR_Y - 4 }, { tx, BAR_Y + BAR_H + 4 },
@@ -640,7 +602,6 @@ void World::draw(render::Renderer& r) const {
         }
     }
 
-    // Room-clear pulse (skipped during warden fight)
     if (!warden_active_ && room_clear_timer_ >= 0.0f) {
         const f32 t = clamp(room_clear_timer_ / 2.0f, 0.0f, 1.0f);
         const f32 radius = 30.0f + t * 700.0f;
