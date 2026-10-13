@@ -162,7 +162,7 @@ static void menu_save_panel(render::Renderer& r, Vec2 c, f32 w, f32 h,
 // Bottom bar with version, hints, station name.
 // ---------------------------------------------------------------------------
 static void menu_bottom_bar(render::Renderer& r, f32 a) {
-    const f32 y = f32(VIRTUAL_H) - 34.0f;
+    const f32 y = f32(VIRTUAL_H) - 44.0f;
     r.draw_line({40.0f, y - 20.0f}, {f32(VIRTUAL_W) - 40.0f, y - 20.0f}, 1.0f,
                 with_alpha(COLOR_CORE_EDGE, u8(a * 80.0f)));
     r.draw_text({40.0f, y}, "INCIDENCE  v0.1.0", 1.8f,
