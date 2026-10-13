@@ -33,6 +33,7 @@ private:
     void draw_game_over(render::Renderer& r) const;
     void draw_victory(render::Renderer& r) const;
     void draw_room_intro(render::Renderer& r) const;
+    void draw_main_menu(render::Renderer& r) const;
 
     void draw_intro(render::Renderer& r) const;
     void draw_intro_background(render::Renderer& r,
@@ -57,6 +58,8 @@ private:
 
     game::Screen  screen_       = game::Screen::Intro;
     f32           intro_time_   = 0.0f;
+    f32           main_menu_time_ = 0.0f;
+    int           menu_cursor_    = 0;
     f32           title_time_   = 0.0f;
     f32           victory_time_ = 0.0f;
 

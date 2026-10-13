@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 namespace inc::game {
 
@@ -12,6 +12,7 @@ namespace inc::game {
 //   GameOver  : after 3 HP lost, offers restart.
 // ---------------------------------------------------------------------------
 enum class Screen {
+    MainMenu,
     Intro,
     Title,
     Playing,

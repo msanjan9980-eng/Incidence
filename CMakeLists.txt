@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.24)
 
 project(incidence
     VERSION 0.1.0
@@ -43,6 +43,7 @@ add_executable(incidence
     src/sokol_impl.c
     src/app/app.cpp
     src/app/app_intro.cpp
+    src/app/app_menu.cpp
     src/app/app_panels.cpp
     src/platform/platform.cpp
     src/render/renderer.cpp
@@ -69,6 +70,7 @@ set_source_files_properties(
     src/main.cpp
     src/app/app.cpp
     src/app/app_intro.cpp
+    src/app/app_menu.cpp
     src/app/app_panels.cpp
     src/platform/platform.cpp
     src/render/renderer.cpp

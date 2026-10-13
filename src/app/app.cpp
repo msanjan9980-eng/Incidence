@@ -71,8 +71,10 @@ void App::init() {
     accumulator_   = 0.0;
     last_frame_ts_ = platform::time_seconds();
     frame_count_   = 0;
-    screen_        = game::Screen::Intro;
+    screen_        = game::Screen::MainMenu;
     intro_time_    = 0.0f;
+    main_menu_time_ = 0.0f;
+    menu_cursor_    = 0;
     title_time_    = 0.0f;
     victory_time_  = 0.0f;
     map_cursor_    = 0;
@@ -136,6 +138,61 @@ void App::step(f32 dt) {
     }
 
     switch (screen_) {
+    case game::Screen::MainMenu: {
+        main_menu_time_ += dt;
+        if (in.key_pressed[static_cast<int>(platform::Key::Up)]) {
+            if (menu_cursor_ > 0) --menu_cursor_; else menu_cursor_ = 2;
+        }
+        if (in.key_pressed[static_cast<int>(platform::Key::Down)]) {
+            if (menu_cursor_ < 2) ++menu_cursor_; else menu_cursor_ = 0;
+        }
+        if (in.key_pressed[static_cast<int>(platform::Key::Escape)]) {
+            running_ = false;
+            break;
+        }
+        const bool activate =
+            in.key_pressed[static_cast<int>(platform::Key::Enter)] ||
+            in.key_pressed[static_cast<int>(platform::Key::Space)];
+        if (activate) {
+            if (menu_cursor_ == 0) {
+                screen_ = game::Screen::Intro;
+                intro_time_ = 0.0f;
+    main_menu_time_ = 0.0f;
+    menu_cursor_    = 0;
+            } else if (menu_cursor_ == 1) {
+                FILE* sf = std::fopen("save.sav", "r");
+                const bool has_save = (sf != nullptr);
+                if (sf) std::fclose(sf);
+                if (has_save) {
+                    game::SaveData sd;
+                    if (game::load_game("save.sav", sd)) {
+                        world_.character() = sd.character;
+                        world_.jump_to_room(sd.current_room);
+                        world_.set_rooms_visited(sd.rooms_visited);
+                    } else {
+                        world_.reset();
+                    }
+                    logs_   = game::LogState{};
+                    quests_ = game::QuestState{};
+                    map_cursor_ = world_.room_index();
+                    screen_ = game::Screen::Playing;
+                    last_room_shown_      = -1;
+                    last_warden_state_    = false;
+                    room_intro_timer_     = -1.0f;
+                    character_sheet_open_ = false;
+                    skill_tree_open_      = false;
+                    equipment_panel_open_ = false;
+                    log_archive_open_     = false;
+                    quest_log_open_       = false;
+                    world_map_open_       = false;
+                }
+            } else {
+                running_ = false;
+            }
+        }
+        break;
+    }
+
     case game::Screen::Intro: {
         intro_time_ += dt;
         if (any_pressed) { screen_ = game::Screen::Title; title_time_ = 0.0f; break; }
@@ -468,6 +525,9 @@ void App::render() {
     renderer_.begin_frame(platform::window_width(), platform::window_height());
 
     switch (screen_) {
+    case game::Screen::MainMenu:
+        draw_main_menu(renderer_);
+        break;
     case game::Screen::Intro:
         draw_intro(renderer_);
         break;
@@ -654,7 +714,7 @@ void App::draw_room_intro(render::Renderer& r) const {
                 {x0 + 41, y1 - 22}, {x0 + 38, y1 - 22},
                 with_alpha(accent, u8(140 * alpha)));
 
-    banner_badge_orbit(r, {x0 + 96, y0 + 70}, 46.0f, elapsed, alpha, accent);
+    banner_badge_orbit(r, x0 + 96.0f, y0 + 70.0f, 46.0f, elapsed, alpha, accent);
     render::icon_hex(r, {x0 + 96, y0 + 70}, 34.0f,
                      with_alpha(accent, u8(alpha * 60)),
                      with_alpha(accent, u8(alpha * 220)));
@@ -704,12 +764,12 @@ void App::draw_room_intro(render::Renderer& r) const {
 
     int lancers = 0, bankers = 0, leads = 0;
     {
-        const Room& rm = room_at(idx < 0 ? 0 : idx);
+        const game::Room& rm = game::room_at(idx < 0 ? 0 : idx);
         for (int i = 0; i < rm.enemy_count; ++i) {
             switch (rm.enemies[i].type) {
-                case EnemyType::Lancer: ++lancers; break;
-                case EnemyType::Banker: ++bankers; break;
-                case EnemyType::Lead:   ++leads;   break;
+                case game::EnemyType::Lancer: ++lancers; break;
+                case game::EnemyType::Banker: ++bankers; break;
+                case game::EnemyType::Lead:   ++leads;   break;
             }
         }
     }
@@ -723,7 +783,7 @@ void App::draw_room_intro(render::Renderer& r) const {
 
     if (!boss) {
         banner_room_mini(r, x1 - 110, y0 + 220, 140.0f,
-                         room_at(idx).wall_count, room_at(idx).door_count,
+                         game::room_at(idx).wall_count, game::room_at(idx).door_count,
                          alpha, accent, COLOR_FACET_EDGE);
         r.draw_text({x1 - 190, y0 + 302}, "FLOOR PLAN", 1.8f,
                     with_alpha(COLOR_FACET_EDGE, u8(alpha * 180)));
