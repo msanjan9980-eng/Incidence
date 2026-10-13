@@ -1,4 +1,5 @@
 #include "app/app.hpp"
+#include "render/fx.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -366,7 +367,12 @@ void App::draw_intro(render::Renderer& rr) const {
         rr.draw_line({mx, rail_y - 5.0f}, {mx, rail_y + 5.0f}, 1.5f,
                      with_alpha(COLOR_FACET_EDGE, 160));
     }
-}
+    // ---------- C1 post-FX pass ----------
+    fx::glitch_slice(rr, t, a * 0.85f);
+    fx::noise_bars(rr, t, a * 0.5f, 14);
+    fx::film_grain(rr, t, a * 0.85f, 320, 1.1f);
+    fx::scanlines(rr, a * 0.85f, 4.0f, 38);
+    fx::vignette(rr, a * 1.0f, 190.0f, 10);}
 
 
 
