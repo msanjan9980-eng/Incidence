@@ -44,7 +44,10 @@ add_executable(incidence
     src/app/app.cpp
     src/platform/platform.cpp
     src/render/renderer.cpp
-    src/game/drone.cpp)
+    src/game/drone.cpp
+    src/game/projectile.cpp
+    src/game/turret.cpp
+    src/game/world.cpp)
 
 target_include_directories(incidence PRIVATE
     ${CMAKE_SOURCE_DIR}/src
@@ -56,6 +59,9 @@ set_source_files_properties(
     src/platform/platform.cpp
     src/render/renderer.cpp
     src/game/drone.cpp
+    src/game/projectile.cpp
+    src/game/turret.cpp
+    src/game/world.cpp
     PROPERTIES COMPILE_OPTIONS "${INCIDENCE_CXX_FLAGS}")
 
 set_source_files_properties(

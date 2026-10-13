@@ -63,21 +63,13 @@ void App::advance_simulation(double frame_dt) {
 }
 
 void App::step(f32 dt) {
-    const auto& in = platform::platform_input();
-    const auto  kc = [&](platform::Key k) {
-        return in.key_down[static_cast<int>(k)];
-    };
-
-    drone_.step(dt,
-                kc(platform::Key::Left),  kc(platform::Key::Right),
-                kc(platform::Key::Up),    kc(platform::Key::Down),
-                kc(platform::Key::Q),     kc(platform::Key::E));
+    world_.step(dt, platform::platform_input());
 }
 
 void App::render() {
     renderer_.begin_frame(platform::window_width(),
                           platform::window_height());
-    drone_.draw(renderer_);
+    world_.draw(renderer_);
     renderer_.end_frame();
 }
 
