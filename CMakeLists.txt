@@ -53,7 +53,9 @@ add_executable(incidence
     src/game/warden.cpp
     src/game/character.cpp
     src/game/save.cpp
-    src/game/skill.cpp)
+    src/game/skill.cpp
+    src/game/equipment.cpp
+    src/game/inventory.cpp)
 
 target_include_directories(incidence PRIVATE
     ${CMAKE_SOURCE_DIR}/src
@@ -74,6 +76,8 @@ set_source_files_properties(
     src/game/character.cpp
     src/game/save.cpp
     src/game/skill.cpp
+    src/game/equipment.cpp
+    src/game/inventory.cpp
     PROPERTIES COMPILE_OPTIONS "${INCIDENCE_CXX_FLAGS}")
 
 set_source_files_properties(

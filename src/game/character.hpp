@@ -2,6 +2,8 @@
 
 #include "core/math.hpp"
 #include "game/skill.hpp"
+#include "game/equipment.hpp"
+#include "game/inventory.hpp"
 
 namespace inc::game {
 
@@ -12,9 +14,8 @@ struct Stats {
     int drift  = 3;
 };
 
-inline constexpr int STAT_MIN = 3;
-inline constexpr int STAT_MAX = 15;
-
+inline constexpr int STAT_MIN  = 3;
+inline constexpr int STAT_MAX  = 15;
 inline constexpr int LEVEL_MIN = 1;
 inline constexpr int LEVEL_MAX = 20;
 
@@ -28,11 +29,15 @@ public:
 
     u16   learned_skills = 0;
 
+    Equipment equipped;
+    Inventory inventory;
+
     [[nodiscard]] f32 shield_span_rad() const noexcept;
     [[nodiscard]] f32 spin_speed() const noexcept;
     [[nodiscard]] f32 reflect_multiplier() const noexcept;
     [[nodiscard]] f32 dash_impulse() const noexcept;
     [[nodiscard]] f32 dash_cooldown() const noexcept;
+    [[nodiscard]] int max_hp() const noexcept;
 
     [[nodiscard]] static int xp_to_next(int level) noexcept;
     [[nodiscard]] int  xp_to_next() const noexcept { return xp_to_next(level); }

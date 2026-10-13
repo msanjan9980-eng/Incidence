@@ -158,20 +158,25 @@ void App::step(f32 dt) {
                 screen_ = game::Screen::Playing;
                 last_room_shown_      = -1;
                 last_warden_state_    = false;
-                room_intro_timer_     = -1.0f;
-                character_sheet_open_ = false;
-                skill_tree_open_      = false;
+                room_intro_timer_      = -1.0f;
+                character_sheet_open_  = false;
+                skill_tree_open_       = false;
+                equipment_panel_open_  = false;
             }
             break;
         }
         case game::Screen::Playing: {
             if (in.key_pressed[static_cast<int>(platform::Key::Tab)]) {
                 character_sheet_open_ = !character_sheet_open_;
-                if (character_sheet_open_) skill_tree_open_ = false;
+                if (character_sheet_open_) { skill_tree_open_ = false; equipment_panel_open_ = false; }
             }
             if (in.key_pressed[static_cast<int>(platform::Key::K)]) {
                 skill_tree_open_ = !skill_tree_open_;
-                if (skill_tree_open_) character_sheet_open_ = false;
+                if (skill_tree_open_) { character_sheet_open_ = false; equipment_panel_open_ = false; }
+            }
+            if (in.key_pressed[static_cast<int>(platform::Key::E)]) {
+                equipment_panel_open_ = !equipment_panel_open_;
+                if (equipment_panel_open_) { character_sheet_open_ = false; skill_tree_open_ = false; }
             }
 
             if (character_sheet_open_) {
@@ -210,6 +215,29 @@ void App::step(f32 dt) {
                 break;
             }
 
+            if (equipment_panel_open_) {
+                if (in.key_pressed[static_cast<int>(platform::Key::Escape)]) {
+                    equipment_panel_open_ = false;
+                    break;
+                }
+                if (in.key_pressed[static_cast<int>(platform::Key::Up)])
+                    equipment_slot_ = (equipment_slot_ + 2) % 3;
+                if (in.key_pressed[static_cast<int>(platform::Key::Down)])
+                    equipment_slot_ = (equipment_slot_ + 1) % 3;
+                if (in.key_pressed[static_cast<int>(platform::Key::Left)] ||
+                    in.key_pressed[static_cast<int>(platform::Key::Right)]) {
+                    const int dir = in.key_pressed[static_cast<int>(platform::Key::Left)] ? -1 : +1;
+                    game::Character& ch = world_.character();
+                    if (equipment_slot_ == 0)
+                        ch.equipped.facet = ch.inventory.next_facet(ch.equipped.facet, dir);
+                    else if (equipment_slot_ == 1)
+                        ch.equipped.core = ch.inventory.next_core(ch.equipped.core, dir);
+                    else
+                        ch.equipped.hull = ch.inventory.next_hull(ch.equipped.hull, dir);
+                }
+                break;
+            }
+
             world_.step(dt, in);
 
             const int  room_now = world_.room_index();
@@ -238,9 +266,10 @@ void App::step(f32 dt) {
                 screen_ = game::Screen::Playing;
                 last_room_shown_      = -1;
                 last_warden_state_    = false;
-                room_intro_timer_     = -1.0f;
-                character_sheet_open_ = false;
-                skill_tree_open_      = false;
+                room_intro_timer_      = -1.0f;
+                character_sheet_open_  = false;
+                skill_tree_open_       = false;
+                equipment_panel_open_  = false;
             }
             break;
         }
@@ -266,6 +295,7 @@ void App::render() {
             world_.draw(renderer_);
             if (character_sheet_open_)     draw_character_sheet(renderer_);
             else if (skill_tree_open_)     draw_skill_tree(renderer_);
+            else if (equipment_panel_open_) draw_equipment_panel(renderer_);
             else                           draw_room_intro(renderer_);
             break;
         case game::Screen::GameOver: draw_game_over(renderer_);  break;
@@ -1039,6 +1069,117 @@ void App::draw_victory(render::Renderer& rr) const {
     rr.draw_circle({ cx, VIRTUAL_H * 0.5f }, 300.0f, with_alpha(COLOR_CORE_INNER, 8), 40);
 }
 
+
+// ---------------------------------------------------------------------------
+// Equipment panel (E key).
+// ---------------------------------------------------------------------------
+void App::draw_equipment_panel(render::Renderer& r) const {
+    const game::Character& ch = world_.character();
+
+    r.set_layer(render::Renderer::Layer::Alpha);
+    r.draw_quad({ 0, 0 }, { VIRTUAL_W, 0 },
+                { VIRTUAL_W, VIRTUAL_H }, { 0, VIRTUAL_H },
+                with_alpha(COLOR_VOID, 220));
+
+    const f32 cx = VIRTUAL_W * 0.5f;
+    const f32 panel_top = VIRTUAL_H * 0.16f;
+    const f32 panel_w = 900.0f;
+    const f32 panel_h = 680.0f;
+    const f32 panel_left = cx - panel_w * 0.5f;
+
+    r.draw_quad({ panel_left, panel_top }, { panel_left + panel_w, panel_top },
+                { panel_left + panel_w, panel_top + panel_h },
+                { panel_left, panel_top + panel_h },
+                with_alpha(COLOR_CORE_FILL, 200));
+    r.draw_line({ panel_left, panel_top }, { panel_left + panel_w, panel_top },
+                2.0f, COLOR_CORE_EDGE);
+    r.draw_line({ panel_left, panel_top + panel_h },
+                { panel_left + panel_w, panel_top + panel_h },
+                2.0f, COLOR_CORE_EDGE);
+
+    const f32 pad_x = panel_left + 60.0f;
+    f32 y = panel_top + 40.0f;
+
+    r.draw_text({ pad_x, y }, "EQUIPMENT", 3.6f, COLOR_CORE_INNER);
+    y += 80.0f;
+
+    struct Row {
+        const char* slot;
+        const char* name;
+        const char* desc;
+        int         count_unlocked;
+        bool        selected;
+    };
+
+    const Row rows[3] = {
+        { "FACET", game::facet_name(ch.equipped.facet),
+                   game::facet_desc(ch.equipped.facet),
+                   1 + (ch.inventory.is_unlocked(game::FacetId::Wide) ? 1 : 0)
+                     + (ch.inventory.is_unlocked(game::FacetId::Heavy) ? 1 : 0),
+                   equipment_slot_ == 0 },
+        { "CORE",  game::core_name(ch.equipped.core),
+                   game::core_desc(ch.equipped.core),
+                   1 + (ch.inventory.is_unlocked(game::CoreId::Coral) ? 1 : 0)
+                     + (ch.inventory.is_unlocked(game::CoreId::Quartz) ? 1 : 0),
+                   equipment_slot_ == 1 },
+        { "HULL",  game::hull_name(ch.equipped.hull),
+                   game::hull_desc(ch.equipped.hull),
+                   1 + (ch.inventory.is_unlocked(game::HullId::Reactive) ? 1 : 0)
+                     + (ch.inventory.is_unlocked(game::HullId::Silent) ? 1 : 0),
+                   equipment_slot_ == 2 },
+    };
+
+    for (int i = 0; i < 3; ++i) {
+        const Row& row = rows[i];
+        const f32 row_h = 140.0f;
+
+        // Selection highlight
+        if (row.selected) {
+            r.draw_quad({ panel_left + 30.0f,             y - 10.0f },
+                        { panel_left + panel_w - 30.0f,   y - 10.0f },
+                        { panel_left + panel_w - 30.0f,   y + row_h - 10.0f },
+                        { panel_left + 30.0f,             y + row_h - 10.0f },
+                        with_alpha(COLOR_CORE_EDGE, 40));
+            r.draw_line({ panel_left + 30.0f, y - 10.0f },
+                        { panel_left + panel_w - 30.0f, y - 10.0f },
+                        2.0f, COLOR_CORE_INNER);
+            r.draw_line({ panel_left + 30.0f, y + row_h - 10.0f },
+                        { panel_left + panel_w - 30.0f, y + row_h - 10.0f },
+                        2.0f, COLOR_CORE_INNER);
+        }
+
+        // Slot label
+        r.draw_text({ pad_x, y + 20.0f }, row.slot, 2.6f,
+                    row.selected ? COLOR_CORE_INNER : with_alpha(COLOR_FACET_EDGE, 200));
+
+        // Item name
+        r.draw_text({ pad_x + 180.0f, y + 20.0f }, row.name, 2.8f,
+                    row.selected ? COLOR_CORE_INNER : COLOR_CORE_EDGE);
+
+        // Effect description
+        r.draw_text({ pad_x + 180.0f, y + 60.0f }, row.desc, 2.0f,
+                    with_alpha(COLOR_FACET_EDGE, 220));
+
+        // Count of unlocked items in this slot
+        char count_buf[32];
+        std::snprintf(count_buf, sizeof(count_buf), "%d / 3", row.count_unlocked);
+        const f32 cw = r.text_width(count_buf, 2.0f);
+        r.draw_text({ panel_left + panel_w - 60.0f - cw, y + 20.0f }, count_buf, 2.0f,
+                    with_alpha(COLOR_FACET_EDGE, 180));
+
+        y += row_h;
+    }
+
+    y += 20.0f;
+
+    // Footer hints
+    r.draw_text({ pad_x, y },
+                "UP / DOWN: SELECT SLOT    LEFT / RIGHT: CHANGE ITEM",
+                2.0f, with_alpha(COLOR_FACET_EDGE, 200));
+    r.draw_text({ pad_x, y + 30.0f },
+                "[E] / [ESC] TO CLOSE",
+                2.0f, with_alpha(COLOR_FACET_EDGE, 200));
+}
 void App::shutdown() {
     audio::shutdown();
     renderer_.shutdown();

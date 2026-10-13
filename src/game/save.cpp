@@ -1,4 +1,4 @@
-#include "game/save.hpp"
+﻿#include "game/save.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -22,6 +22,10 @@ bool save_game(const std::string& path, const Character& ch, int current_room) {
         "  \"chg\": %d,\n"
         "  \"drf\": %d,\n"
         "  \"skills\": %d,\n"
+        "  \"eqf\": %d,\n"
+        "  \"eqc\": %d,\n"
+        "  \"eqh\": %d,\n"
+        "  \"inv\": %d,\n"
         "  \"room\": %d\n"
         "}\n",
         ch.level,
@@ -33,6 +37,10 @@ bool save_game(const std::string& path, const Character& ch, int current_room) {
         ch.stats.charge,
         ch.stats.drift,
         int(ch.learned_skills),
+        int(ch.equipped.facet),
+        int(ch.equipped.core),
+        int(ch.equipped.hull),
+        int(ch.inventory.unlocked),
         current_room);
 
     std::fclose(f);
@@ -41,8 +49,6 @@ bool save_game(const std::string& path, const Character& ch, int current_room) {
 
 namespace {
 
-// Find `"key"` in `text` and parse the integer that follows it.
-// Tolerant of whitespace and trailing commas. Not a general JSON parser.
 bool find_int(const char* text, const char* key, int& out) {
     const size_t klen = std::strlen(key);
     const char* p = text;
@@ -82,6 +88,7 @@ bool load_game(const std::string& path, SaveData& out) {
     int lv = 1, xp = 0, pts = 0, skp = 0;
     int arc = 3, foc = 3, chg = 3, drf = 3, room = 0;
     int skills = 0;
+    int eqf = 0, eqc = 0, eqh = 0, inv = 73;
 
     find_int(buf, "\"lv\"",  lv);
     find_int(buf, "\"xp\"",  xp);
@@ -92,9 +99,12 @@ bool load_game(const std::string& path, SaveData& out) {
     find_int(buf, "\"chg\"", chg);
     find_int(buf, "\"drf\"", drf);
     find_int(buf, "\"skills\"", skills);
+    find_int(buf, "\"eqf\"", eqf);
+    find_int(buf, "\"eqc\"", eqc);
+    find_int(buf, "\"eqh\"", eqh);
+    find_int(buf, "\"inv\"", inv);
     find_int(buf, "\"room\"", room);
 
-    // Clamp to sane ranges.
     if (lv  < LEVEL_MIN) lv  = LEVEL_MIN;
     if (lv  > LEVEL_MAX) lv  = LEVEL_MAX;
     if (arc < STAT_MIN) arc = STAT_MIN;
@@ -106,17 +116,27 @@ bool load_game(const std::string& path, SaveData& out) {
     if (drf < STAT_MIN) drf = STAT_MIN;
     if (drf > STAT_MAX) drf = STAT_MAX;
 
-    out.character.level        = lv;
-    out.character.xp           = xp;
-    out.character.stat_points  = pts;
-    out.character.skill_points = skp;
-    out.character.stats.arc    = arc;
-    out.character.stats.focus  = foc;
-    out.character.stats.charge = chg;
-    out.character.stats.drift  = drf;
-    out.character.learned_skills = u16(skills & 0x7FFF);
-    out.current_room           = room;
-    out.has_save               = true;
+    if (eqf < 0 || eqf >= int(FacetId::Count)) eqf = 0;
+    if (eqc < 0 || eqc >= int(CoreId::Count))  eqc = 0;
+    if (eqh < 0 || eqh >= int(HullId::Count))  eqh = 0;
+    if (inv < 0) inv = 73;
+    inv &= 0x01FF;
+
+    out.character.level            = lv;
+    out.character.xp               = xp;
+    out.character.stat_points      = pts;
+    out.character.skill_points     = skp;
+    out.character.stats.arc        = arc;
+    out.character.stats.focus      = foc;
+    out.character.stats.charge     = chg;
+    out.character.stats.drift      = drf;
+    out.character.learned_skills   = u16(skills & 0x7FFF);
+    out.character.equipped.facet   = FacetId(eqf);
+    out.character.equipped.core    = CoreId(eqc);
+    out.character.equipped.hull    = HullId(eqh);
+    out.character.inventory.unlocked = u16(inv);
+    out.current_room               = room;
+    out.has_save                   = true;
     return true;
 }
 

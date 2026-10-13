@@ -4,7 +4,7 @@ namespace inc::game {
 
 f32 Character::shield_span_rad() const noexcept {
     const f32 deg = 100.0f + f32(stats.arc) * 7.5f;
-    return deg_to_rad(deg);
+    return deg_to_rad(deg) * equip_shield_span_mult(equipped);
 }
 
 f32 Character::spin_speed() const noexcept {
@@ -12,15 +12,22 @@ f32 Character::spin_speed() const noexcept {
 }
 
 f32 Character::reflect_multiplier() const noexcept {
-    return 1.0f + f32(stats.charge) * 0.1f;
+    const f32 base = 1.0f + f32(stats.charge) * 0.1f;
+    return base * equip_reflect_speed_mult(equipped);
 }
 
 f32 Character::dash_impulse() const noexcept {
-    return 400.0f + f32(stats.drift) * 40.0f;
+    const f32 base = 400.0f + f32(stats.drift) * 40.0f;
+    return base * equip_dash_impulse_mult(equipped);
 }
 
 f32 Character::dash_cooldown() const noexcept {
-    return 1.0f - f32(stats.drift) * 0.03f;
+    const f32 base = 1.0f - f32(stats.drift) * 0.03f;
+    return base * equip_dash_cooldown_mult(equipped);
+}
+
+int Character::max_hp() const noexcept {
+    return 3 + equip_bonus_hp(equipped);
 }
 
 int Character::xp_to_next(int lv) noexcept {

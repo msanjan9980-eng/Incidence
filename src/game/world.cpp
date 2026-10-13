@@ -1,4 +1,4 @@
-﻿#include "game/world.hpp"
+#include "game/world.hpp"
 #include "render/renderer.hpp"
 #include "platform/platform.hpp"
 #include "audio/audio.hpp"
@@ -65,7 +65,7 @@ void World::jump_to_room(int index) {
 }
 
 void World::load_room(int index) {
-    player_hp_ = 3;
+    player_hp_ = character_.max_hp();
 
     const Room& r = room_at(index);
     current_room_ = index;
@@ -100,7 +100,7 @@ void World::load_room(int index) {
 }
 
 void World::spawn_warden() {
-    player_hp_ = 3;
+    player_hp_ = character_.max_hp();
     warden_.reset();
     warden_active_ = true;
     for (auto& p : projectiles_) p.alive = false;
@@ -297,6 +297,17 @@ void World::step(f32 dt, const platform::InputState& input) {
             if (current_room_ == ROOM_COUNT - 1) {
                 spawn_warden();
             } else {
+                // Equipment unlocks at room milestones.
+                if (current_room_ == 2) {
+                    character_.inventory.unlock(FacetId::Wide);
+                    character_.inventory.unlock(CoreId::Coral);
+                    character_.inventory.unlock(HullId::Reactive);
+                }
+                if (current_room_ == 5) {
+                    character_.inventory.unlock(FacetId::Heavy);
+                    character_.inventory.unlock(CoreId::Quartz);
+                    character_.inventory.unlock(HullId::Silent);
+                }
                 const int next = current_room_ + 1;
                 load_room(next);
                 save_game("save.sav", character_, next);
