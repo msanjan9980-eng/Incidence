@@ -142,4 +142,80 @@ inline void draw_menu_background(Renderer& r, f32 time, Color tint, u8 alpha) {
     r.set_layer(Renderer::Layer::Alpha);
 }
 
+
+// ============================================================================
+// Gameplay entity icons
+// ============================================================================
+
+// Player drone: core + faceted shield arc + heading pip.
+inline void icon_drone(Renderer& r, Vec2 c, f32 size,
+                       Color body, Color shield, Color core) {
+    r.draw_circle(c, size * 0.28f, body, 16);
+    r.draw_circle(c, size * 0.12f, core, 12);
+    r.draw_arc_ring(c, size * 0.50f, size * 0.62f,
+                    -PI * 0.86f, -PI * 0.14f, shield, 14);
+    r.draw_line({c.x, c.y - size * 0.62f},
+                {c.x, c.y - size * 0.78f}, size * 0.10f, shield);
+}
+
+// Turret base: octagonal body + colored core dot.
+inline void icon_turret_body(Renderer& r, Vec2 c, f32 size,
+                             Color body, Color core) {
+    Vec2 pts[8];
+    for (int i = 0; i < 8; ++i) {
+        const f32 a = TAU * f32(i) / 8.0f + PI * 0.125f;
+        pts[i] = c + Vec2::from_angle(a) * size * 0.50f;
+    }
+    for (int i = 1; i < 7; ++i) r.draw_triangle(pts[0], pts[i], pts[i + 1], body);
+    r.draw_circle(c, size * 0.20f, core, 14);
+}
+
+// Lancer: pentagon (sharp).
+inline void icon_lancer(Renderer& r, Vec2 c, f32 size,
+                        Color body, Color core) {
+    Vec2 pts[5];
+    for (int i = 0; i < 5; ++i) {
+        const f32 a = TAU * f32(i) / 5.0f - HALF_PI;
+        pts[i] = c + Vec2::from_angle(a) * size * 0.52f;
+    }
+    for (int i = 1; i < 4; ++i) r.draw_triangle(pts[0], pts[i], pts[i + 1], body);
+    r.draw_circle(c, size * 0.16f, core, 12);
+}
+
+// Banker: hexagon (round).
+inline void icon_banker(Renderer& r, Vec2 c, f32 size,
+                        Color body, Color core) {
+    icon_hex(r, c, size * 0.54f, body, 0);
+    r.draw_circle(c, size * 0.18f, core, 12);
+}
+
+// Lead: diamond with crosshair ticks.
+inline void icon_lead(Renderer& r, Vec2 c, f32 size,
+                      Color body, Color core) {
+    const f32 s = size * 0.55f;
+    r.draw_triangle({c.x, c.y - s}, {c.x - s * 0.6f, c.y}, {c.x + s * 0.6f, c.y}, body);
+    r.draw_triangle({c.x, c.y + s}, {c.x - s * 0.6f, c.y}, {c.x + s * 0.6f, c.y}, body);
+    r.draw_circle(c, size * 0.16f, core, 12);
+    r.draw_line({c.x, c.y - s * 1.30f}, {c.x, c.y - s * 1.55f}, size * 0.08f, core);
+    r.draw_line({c.x, c.y + s * 1.30f}, {c.x, c.y + s * 1.55f}, size * 0.08f, core);
+    r.draw_line({c.x - s * 1.30f, c.y}, {c.x - s * 1.55f, c.y}, size * 0.08f, core);
+    r.draw_line({c.x + s * 1.30f, c.y}, {c.x + s * 1.55f, c.y}, size * 0.08f, core);
+}
+
+// Warden: layered diamond with orbiting satellites.
+inline void icon_warden(Renderer& r, Vec2 c, f32 size,
+                        Color body, Color core, f32 time) {
+    const f32 s = size * 0.55f;
+    r.draw_triangle({c.x, c.y - s}, {c.x - s * 0.7f, c.y}, {c.x + s * 0.7f, c.y}, body);
+    r.draw_triangle({c.x, c.y + s}, {c.x - s * 0.7f, c.y}, {c.x + s * 0.7f, c.y}, body);
+    r.draw_triangle({c.x - s * 0.7f, c.y}, {c.x, c.y - s * 0.7f}, {c.x, c.y + s * 0.7f}, body);
+    r.draw_triangle({c.x + s * 0.7f, c.y}, {c.x, c.y - s * 0.7f}, {c.x, c.y + s * 0.7f}, body);
+    r.draw_circle(c, size * 0.16f, core, 14);
+    for (int i = 0; i < 3; ++i) {
+        const f32 a = time * 1.5f + TAU * f32(i) / 3.0f;
+        const Vec2 p = c + Vec2::from_angle(a) * size * 0.85f;
+        r.draw_circle(p, size * 0.10f, core, 10);
+    }
+}
+
 } // namespace inc::render

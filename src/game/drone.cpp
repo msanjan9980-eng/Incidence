@@ -87,32 +87,30 @@ Vec2 Drone::facet_normal(int i) const {
 }
 
 void Drone::draw(render::Renderer& r) const {
-    // ---- Engine trail --------------------------------------------------
     const f32 speed = velocity.length();
     if (speed > 40.0f) {
         Vec2 back = -(velocity * (1.0f / speed));
-        Vec2 tip  = position + back * 34.0f;
-        r.draw_line(position + back * (CORE_RADIUS + 2.0f), tip,
-                    6.0f, COLOR_ENGINE_GLOW);
+        for (int i = 0; i < 3; ++i) {
+            const f32 d = CORE_RADIUS + 6.0f + f32(i) * 10.0f;
+            const u8 a = u8(140.0f * (1.0f - f32(i) / 3.0f));
+            r.draw_circle(position + back * d, 5.0f - f32(i),
+                          with_alpha(COLOR_ENGINE_GLOW, a), 10);
+        }
     }
 
-    // ---- Shield facets -------------------------------------------------
     for (int i = 0; i < SHIELD_FACETS; ++i) {
         f32 a0, a1;
         facet_angles(i, a0, a1);
-
-        const Vec2 dir0 = Vec2::from_angle(a0);
-        const Vec2 dir1 = Vec2::from_angle(a1);
-
-        const Vec2 pin0  = position + dir0 * SHIELD_R_INNER;
-        const Vec2 pin1  = position + dir1 * SHIELD_R_INNER;
-        const Vec2 pout0 = position + dir0 * SHIELD_R_OUTER;
-        const Vec2 pout1 = position + dir1 * SHIELD_R_OUTER;
+        const Vec2 d0 = Vec2::from_angle(a0);
+        const Vec2 d1 = Vec2::from_angle(a1);
+        const Vec2 pin0  = position + d0 * SHIELD_R_INNER;
+        const Vec2 pin1  = position + d1 * SHIELD_R_INNER;
+        const Vec2 pout0 = position + d0 * SHIELD_R_OUTER;
+        const Vec2 pout1 = position + d1 * SHIELD_R_OUTER;
 
         r.draw_quad(pin0, pin1, pout1, pout0, COLOR_FACET_FILL);
-
         r.draw_line(pin0,  pin1,  2.5f, COLOR_FACET_EDGE);
-        r.draw_line(pout0, pout1, 2.5f, COLOR_FACET_EDGE);
+        r.draw_line(pout0, pout1, 3.0f, COLOR_FACET_EDGE);
         r.draw_line(pin0,  pout0, 1.2f, COLOR_FACET_EDGE);
         r.draw_line(pin1,  pout1, 1.2f, COLOR_FACET_EDGE);
 
@@ -122,13 +120,20 @@ void Drone::draw(render::Renderer& r) const {
                     2.0f, COLOR_FACET_NORMAL);
     }
 
-    // ---- Core ---------------------------------------------------------
+    r.draw_ring(position, SHIELD_R_OUTER + 18.0f, SHIELD_R_OUTER + 19.0f,
+                with_alpha(COLOR_FACET_EDGE, 60), 40);
+
     r.draw_circle(position, CORE_RADIUS + 8.0f, COLOR_CORE_GLOW, 24);
     r.draw_circle(position, CORE_RADIUS,        COLOR_CORE_FILL, 20);
     r.draw_ring  (position, CORE_RADIUS, CORE_RADIUS + 2.5f, COLOR_CORE_EDGE, 28);
-    r.draw_circle(position, 4.5f, COLOR_CORE_INNER, 12);
+    r.draw_circle(position, 5.0f, COLOR_CORE_INNER, 12);
 
-    // ---- Dash cooldown ring --------------------------------------------
+    const Vec2 hd = Vec2::from_angle(heading);
+    r.draw_circle(position + hd * (CORE_RADIUS + 3.0f), 3.5f, COLOR_CORE_INNER, 10);
+    r.draw_line(position + hd * (CORE_RADIUS + 6.0f),
+                position + hd * (CORE_RADIUS + 14.0f),
+                2.0f, COLOR_CORE_INNER);
+
     if (dash_cd > 0.0f) {
         const f32 frac = clamp(1.0f - dash_cd * 0.6f, 0.0f, 1.0f);
         r.draw_arc_ring(position, CORE_RADIUS + 18.0f, CORE_RADIUS + 22.0f,

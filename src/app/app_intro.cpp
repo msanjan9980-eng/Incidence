@@ -1,4 +1,4 @@
-﻿#include "app/app.hpp"
+#include "app/app.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -191,49 +191,78 @@ void App::draw_intro(render::Renderer& rr) const {
     const IntroCard& card = INTRO_CARDS[card_index];
     const f32 p = card_t / card.duration;
 
+    // Tight envelope: quick fade in (0-0.10), hold, fade out (0.90-1.0)
     f32 alpha = 1.0f;
-    if (p < 0.15f)      alpha = p / 0.15f;
-    else if (p > 0.85f) alpha = (1.0f - p) / 0.15f;
+    if (p < 0.10f)       alpha = p / 0.10f;
+    else if (p > 0.90f)  alpha = (1.0f - p) / 0.10f;
     alpha = clamp(alpha, 0.0f, 1.0f);
 
-    rr.set_layer(render::Renderer::Layer::Alpha);
-    if (card_index == 2) {
-        rr.draw_quad({ 0, 0 }, { VIRTUAL_W, 0 }, { VIRTUAL_W, VIRTUAL_H }, { 0, VIRTUAL_H },
-                     with_alpha(COLOR_ENEMY_FILL, u8(alpha * 30.0f)));
-    } else if (card_index == 3) {
-        rr.draw_quad({ 0, 0 }, { VIRTUAL_W, 0 }, { VIRTUAL_W, VIRTUAL_H }, { 0, VIRTUAL_H },
-                     with_alpha(COLOR_ENEMY_FILL, u8(alpha * 18.0f)));
-    }
+    // Text slides in from the right (40 px) with ease-out over first 30%
+    const f32 enter = clamp(card_t / (card.duration * 0.30f), 0.0f, 1.0f);
+    const f32 ease  = 1.0f - (1.0f - enter) * (1.0f - enter);
+    const f32 slide = (1.0f - ease) * 40.0f;
 
+    rr.set_layer(render::Renderer::Layer::Alpha);
+    rr.draw_quad({0,0}, {VIRTUAL_W,0}, {VIRTUAL_W,VIRTUAL_H}, {0,VIRTUAL_H}, rgba(3,8,14,255));
     draw_intro_background(rr, card_index, card_t);
 
-    const f32 cx = VIRTUAL_W * 0.5f;
-    const f32 text_y_top = VIRTUAL_H * 0.58f;
-    const f32 text_y_bot = VIRTUAL_H * 0.68f;
+    // Vertical vignette
+    rr.draw_quad({0,0}, {VIRTUAL_W,0}, {VIRTUAL_W,VIRTUAL_H*0.22f}, {0,VIRTUAL_H*0.22f}, rgba(0,0,0,180));
+    rr.draw_quad({0,VIRTUAL_H*0.78f}, {VIRTUAL_W,VIRTUAL_H*0.78f}, {VIRTUAL_W,VIRTUAL_H}, {0,VIRTUAL_H}, rgba(0,0,0,180));
 
-    rr.draw_line({ cx - 500.0f, text_y_top - 20.0f }, { cx + 500.0f, text_y_top - 20.0f },
-                 1.5f, with_alpha(card.accent, u8(alpha * 100.0f)));
-    rr.draw_line({ cx - 500.0f, text_y_bot + 70.0f }, { cx + 500.0f, text_y_bot + 70.0f },
-                 1.5f, with_alpha(card.accent, u8(alpha * 100.0f)));
+    // Scan-line wipe during entry (0..0.10) and exit (0.90..1.0)
+    f32 wipe_y = -1.0f;
+    if (p < 0.10f)       wipe_y = VIRTUAL_H * (p / 0.10f);
+    else if (p > 0.90f)  wipe_y = VIRTUAL_H * ((p - 0.90f) / 0.10f);
+    if (wipe_y >= 0.0f) {
+        rr.set_layer(render::Renderer::Layer::Additive);
+        rr.draw_quad({0, wipe_y - 3.0f}, {VIRTUAL_W, wipe_y - 3.0f},
+                     {VIRTUAL_W, wipe_y + 3.0f}, {0, wipe_y + 3.0f},
+                     with_alpha(card.accent, u8(alpha * 200.0f)));
+        rr.set_layer(render::Renderer::Layer::Alpha);
+    }
+
+    // Card counter, top-left
+    char cnt[16];
+    std::snprintf(cnt, sizeof(cnt), "%02d / %02d", card_index + 1, INTRO_CARD_COUNT);
+    rr.draw_text({60.0f, 44.0f}, cnt, 2.2f, with_alpha(card.accent, u8(alpha * 180.0f)));
+
+    // Vertical frame lines
+    rr.draw_line({60.0f, 100.0f}, {60.0f, VIRTUAL_H - 100.0f}, 1.0f,
+                 with_alpha(card.accent, u8(alpha * 90.0f)));
+    rr.draw_line({VIRTUAL_W - 60.0f, 100.0f}, {VIRTUAL_W - 60.0f, VIRTUAL_H - 100.0f}, 1.0f,
+                 with_alpha(card.accent, u8(alpha * 90.0f)));
+
+    // Text block
+    const f32 cx = VIRTUAL_W * 0.5f;
+    const f32 text_y_top = VIRTUAL_H * 0.60f;
+    const f32 text_y_bot = VIRTUAL_H * 0.70f;
+
+    rr.draw_line({cx - 540.0f, text_y_top - 30.0f}, {cx + 540.0f, text_y_top - 30.0f},
+                 1.5f, with_alpha(card.accent, u8(alpha * 120.0f)));
 
     if (card.small && card.small[0] != '\0') {
-        rr.draw_text_centered({ cx, text_y_top }, card.small, 2.6f,
-                              with_alpha(COLOR_FACET_EDGE, u8(alpha * 200.0f)));
+        rr.draw_text_centered({cx + slide, text_y_top}, card.small, 2.8f,
+                              with_alpha(COLOR_FACET_EDGE, u8(alpha * 220.0f)));
     }
     if (card.large && card.large[0] != '\0') {
-        rr.draw_text_centered({ cx, text_y_bot }, card.large, 6.0f,
-                              with_alpha(card.accent, u8(alpha * 255.0f)));
+        const f32 pulse = 0.85f + 0.15f * std::sin(card_t * 2.5f);
+        rr.draw_text_centered({cx + slide, text_y_bot}, card.large, 7.0f,
+                              with_alpha(card.accent, u8(alpha * 255.0f * pulse)));
     }
 
     rr.set_layer(render::Renderer::Layer::Additive);
-    rr.draw_circle({ cx, VIRTUAL_H * 0.32f }, 340.0f,
-                   with_alpha(card.accent, u8(alpha * 14.0f)), 40);
-
+    rr.draw_circle({cx, VIRTUAL_H * 0.32f}, 360.0f,
+                   with_alpha(card.accent, u8(alpha * 16.0f)), 40);
     rr.set_layer(render::Renderer::Layer::Alpha);
-    rr.draw_text({ VIRTUAL_W - 340.0f, VIRTUAL_H - 46.0f },
-                 "PRESS ANY KEY TO SKIP", 1.8f,
-                 with_alpha(COLOR_FACET_EDGE, 110));
 
+    // Skip hint pulses slowly
+    const f32 skip_p = 0.5f + 0.5f * std::sin(intro_time_ * 3.5f);
+    rr.draw_text({VIRTUAL_W - 340.0f, VIRTUAL_H - 46.0f},
+                 "PRESS ANY KEY TO SKIP", 1.8f,
+                 with_alpha(COLOR_FACET_EDGE, u8(80.0f + 90.0f * skip_p)));
+
+    // Progress dots
     const f32 dot_y = VIRTUAL_H - 60.0f;
     const f32 dot_spacing = 26.0f;
     const f32 dots_x0 = cx - (f32(INTRO_CARD_COUNT - 1) * dot_spacing) * 0.5f;
