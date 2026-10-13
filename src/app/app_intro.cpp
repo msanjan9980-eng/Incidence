@@ -68,12 +68,20 @@ static void intro_polish_ambient(render::Renderer& rr, f32 t, f32 a, Color accen
 }
 
 void App::draw_intro_background(render::Renderer& rr, int card_index, f32 card_t) const {
-    const f32 cx = VIRTUAL_W * 0.5f;
-    const f32 cy = VIRTUAL_H * 0.32f;
+    const f32 cx = f32(VIRTUAL_W) * 0.5f;
+    const f32 cy = f32(VIRTUAL_H) * 0.32f;
     const f32 t  = card_t;
+
     rr.set_layer(render::Renderer::Layer::Alpha);
+
+    // Universal faint underlayer: hex grid + drifting constellation
+    fx::hex_grid(rr, t * 0.3f, COLOR_CORE_EDGE, 0.30f, 90.0f, 14, 22);
+    fx::constellation(rr, t * 0.4f, COLOR_CORE_INNER, 0.35f, 36, 5.0f);
+
     switch (card_index) {
     case 0: {
+        fx::orbiting_cloud(rr, {cx, cy}, t, COLOR_CORE_INNER, 0.60f, 44, 200.0f, 380.0f);
+        fx::radial_rings(rr, {cx, cy}, t, COLOR_CORE_EDGE, 0.70f, 2, 280.0f);
         const f32 R = 165.0f;
         const f32 slow = t * 0.15f;
         rr.draw_ring({cx, cy}, R - 3.0f, R, with_alpha(COLOR_CORE_EDGE, 180), 72);
@@ -111,6 +119,8 @@ void App::draw_intro_background(render::Renderer& rr, int card_index, f32 card_t
         break;
     }
     case 1: {
+        fx::perspective_floor(rr, t, cx, cy + 180.0f, COLOR_FACET_EDGE, 0.55f, 12);
+        fx::ripple_curtains(rr, t, COLOR_FACET_EDGE, 0.55f, 18, 24.0f, 0.7f);
         for (int i = 0; i < 12; ++i) {
             const f32 a = TAU * f32(i) / 12.0f;
             const f32 warp = 0.4f + 0.6f * std::sin(t * 0.8f + f32(i) * 0.4f);
@@ -119,14 +129,6 @@ void App::draw_intro_background(render::Renderer& rr, int card_index, f32 card_t
             const Vec2 p0 = {cx + std::cos(a) * r0, cy + std::sin(a) * r0};
             const Vec2 p1 = {cx + std::cos(a) * r1, cy + std::sin(a) * r1};
             rr.draw_line(p0, p1, 1.5f, with_alpha(COLOR_FACET_EDGE, u8(60 + 100 * warp)));
-        }
-        for (int i = 0; i < 8; ++i) {
-            const f32 aa = TAU * f32(i) / 8.0f + t * 0.2f;
-            for (int j = 1; j < 5; ++j) {
-                const f32 r = 90.0f + f32(j) * 50.0f;
-                const Vec2 p = {cx + std::cos(aa) * r, cy + std::sin(aa) * r};
-                rr.draw_circle(p, 2.5f, with_alpha(COLOR_FACET_EDGE, 100), 8);
-            }
         }
         const f32 pulse = 0.5f + 0.5f * std::sin(t * 3.0f);
         rr.set_layer(render::Renderer::Layer::Additive);
@@ -137,6 +139,8 @@ void App::draw_intro_background(render::Renderer& rr, int card_index, f32 card_t
         break;
     }
     case 2: {
+        fx::interference(rr, t, {cx - 120.0f, cy}, {cx + 120.0f, cy},
+                         COLOR_ENEMY_EDGE, 0.55f, 40, 0.032f, 90.0f);
         const f32 wave = 40.0f + t * 300.0f;
         const f32 wave_a = clamp(1.0f - t / 3.2f, 0.0f, 1.0f);
         rr.draw_ring({cx, cy}, wave - 4.0f, wave + 4.0f,
@@ -152,8 +156,6 @@ void App::draw_intro_background(render::Renderer& rr, int card_index, f32 card_t
             rr.draw_quad({p.x - sz, p.y - sz}, {p.x + sz, p.y - sz},
                          {p.x + sz, p.y + sz}, {p.x - sz, p.y + sz},
                          with_alpha(COLOR_ENEMY_FILL, al));
-            rr.draw_line(p, {p.x - std::cos(a) * 8.0f, p.y - std::sin(a) * 8.0f},
-                         1.0f, with_alpha(COLOR_ENEMY_EDGE, u8(al * 0.6f)));
         }
         const f32 cf = clamp(1.0f - t / 3.5f, 0.0f, 1.0f);
         rr.set_layer(render::Renderer::Layer::Additive);
@@ -164,6 +166,7 @@ void App::draw_intro_background(render::Renderer& rr, int card_index, f32 card_t
         break;
     }
     case 3: {
+        fx::orbiting_cloud(rr, {cx, cy}, t, COLOR_ENEMY_EDGE, 0.55f, 50, 150.0f, 320.0f);
         const f32 rot = t * 0.35f;
         Vec2 outer[6] = {};
         for (int i = 0; i < 6; ++i) {
@@ -192,18 +195,10 @@ void App::draw_intro_background(render::Renderer& rr, int card_index, f32 card_t
         const f32 pl = 0.5f + 0.5f * std::sin(t * 4.0f);
         rr.draw_ring({cx, cy}, 30.0f + pl * 5.0f, 34.0f + pl * 5.0f,
                      with_alpha(COLOR_ENEMY_CORE, 200), 24);
-        rr.draw_circle({cx, cy}, 22.0f, COLOR_ENEMY_CORE, 22);
-        rr.draw_circle({cx, cy}, 10.0f, COLOR_VOID, 14);
-        rr.draw_circle({cx, cy}, 4.0f, COLOR_ENEMY_CORE, 8);
-        const f32 blink = std::fabs(std::sin(t * 0.55f));
-        if (blink < 0.12f) {
-            rr.draw_quad({cx - 90.0f, cy - 4.0f}, {cx + 90.0f, cy - 4.0f},
-                         {cx + 90.0f, cy + 4.0f}, {cx - 90.0f, cy + 4.0f},
-                         with_alpha(COLOR_ENEMY_FILL, 220));
-        }
         break;
     }
     case 4: {
+        fx::orbiting_cloud(rr, {cx, cy}, t, COLOR_CORE_INNER, 0.50f, 36, 180.0f, 320.0f);
         const f32 rot = t * 0.25f;
         const f32 R_IN  = 80.0f;
         const f32 R_OUT = 96.0f;
@@ -242,6 +237,7 @@ void App::draw_intro_background(render::Renderer& rr, int card_index, f32 card_t
         break;
     }
     case 5: {
+        fx::ripple_curtains(rr, t * 0.7f, COLOR_BULLET_CORE, 0.50f, 14, 18.0f, 0.9f);
         const f32 n_ang = -PI * 0.25f;
         const Vec2 n {std::cos(n_ang), std::sin(n_ang)};
         const Vec2 tan_ {-n.y, n.x};
