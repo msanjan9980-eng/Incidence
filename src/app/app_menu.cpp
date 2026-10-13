@@ -306,27 +306,129 @@ static void menu_save_panel(render::Renderer& r, Vec2 c, f32 w, f32 h,
 // ---------------------------------------------------------------------------
 // Bottom bar with version, hints, station name.
 // ---------------------------------------------------------------------------
-static void menu_bottom_bar(render::Renderer& r, f32 a) {
+// Large decorative drone wireframe on the left side of the menu.
+static void menu_left_drone(render::Renderer& r, Vec2 dp, f32 t, f32 a) {
+    const f32 heading = -HALF_PI + std::sin(t * 0.8f) * 0.4f;
+    const f32 span = 2.44f;
+    const f32 R_IN  = 46.0f;
+    const f32 R_OUT = 58.0f;
+
+    // Radial glow
+    const f32 pulse = 0.5f + 0.5f * std::sin(t * 2.2f);
+    r.set_layer(render::Renderer::Layer::Additive);
+    r.draw_circle(dp, 90.0f + pulse * 16.0f,
+                  with_alpha(COLOR_CORE_EDGE, u8(a * (22.0f + 18.0f * pulse))), 32);
+    r.set_layer(render::Renderer::Layer::Alpha);
+
+    // Exhaust
+    const f32 back = heading + PI;
+    for (int i = 0; i < 12; ++i) {
+        const f32 age = std::fmod(t * 0.7f + f32(i) * 0.14f, 2.0f);
+        const f32 life = 1.0f - age / 2.0f;
+        const f32 r_dist = 66.0f + age * 160.0f;
+        const Vec2 e { dp.x + std::cos(back) * r_dist,
+                       dp.y + std::sin(back) * r_dist };
+        r.set_layer(render::Renderer::Layer::Additive);
+        r.draw_circle(e, 1.0f + age * 5.0f,
+                      with_alpha(COLOR_CORE_EDGE, u8(a * life * 90.0f)), 10);
+        r.set_layer(render::Renderer::Layer::Alpha);
+    }
+
+    for (int i = 0; i < 5; ++i) {
+        const f32 step = span / 5.0f;
+        const f32 a0 = heading - span * 0.5f + f32(i) * step;
+        const f32 a1 = a0 + step;
+        const Vec2 pin0  = dp + Vec2::from_angle(a0) * R_IN;
+        const Vec2 pin1  = dp + Vec2::from_angle(a1) * R_IN;
+        const Vec2 pout0 = dp + Vec2::from_angle(a0) * R_OUT;
+        const Vec2 pout1 = dp + Vec2::from_angle(a1) * R_OUT;
+        r.draw_quad(pin0, pin1, pout1, pout0, with_alpha(COLOR_FACET_FILL, u8(a * 140.0f)));
+        r.draw_line(pin0, pin1, 2.0f, with_alpha(COLOR_FACET_EDGE, u8(a * 220.0f)));
+        r.draw_line(pout0, pout1, 3.0f, with_alpha(COLOR_FACET_EDGE, u8(a * 255.0f)));
+        r.draw_line(pin0, pout0, 1.0f, with_alpha(COLOR_FACET_EDGE, u8(a * 160.0f)));
+        r.draw_line(pin1, pout1, 1.0f, with_alpha(COLOR_FACET_EDGE, u8(a * 160.0f)));
+
+        // Normal-vector ticks
+        const f32 mid = (a0 + a1) * 0.5f;
+        const Vec2 nn { std::cos(mid), std::sin(mid) };
+        const f32 tl = 8.0f + 6.0f * std::sin(t * 3.0f + f32(i) * 0.9f);
+        r.draw_line({dp.x + nn.x * (R_OUT + 4.0f), dp.y + nn.y * (R_OUT + 4.0f)},
+                    {dp.x + nn.x * (R_OUT + 4.0f + tl), dp.y + nn.y * (R_OUT + 4.0f + tl)},
+                    1.5f, with_alpha(COLOR_CORE_EDGE, u8(a * 210.0f)));
+    }
+
+    // Core
+    r.draw_circle(dp, 14.0f, with_alpha(COLOR_CORE_FILL, u8(a * 230.0f)), 20);
+    r.draw_ring(dp, 14.0f, 16.0f, with_alpha(COLOR_CORE_EDGE, u8(a * 255.0f)), 24);
+    r.draw_circle(dp, 4.0f, with_alpha(COLOR_CORE_INNER, u8(a * 255.0f)), 12);
+
+    // 6 sub-dots orbiting core
+    for (int i = 0; i < 6; ++i) {
+        const f32 ang = t * 0.9f + TAU * f32(i) / 6.0f;
+        const Vec2 p { dp.x + std::cos(ang) * 24.0f, dp.y + std::sin(ang) * 24.0f };
+        const f32 bl = 0.5f + 0.5f * std::sin(t * 3.5f + f32(i) * 1.1f);
+        r.draw_circle(p, 2.0f, with_alpha(COLOR_CORE_INNER, u8(a * (110.0f + 100.0f * bl))), 6);
+    }
+}
+static void menu_bottom_bar(render::Renderer& r, f32 t, f32 a) {
     const f32 y = f32(VIRTUAL_H) - 44.0f;
+
+    // Base separator
     r.draw_line({40.0f, y - 20.0f}, {f32(VIRTUAL_W) - 40.0f, y - 20.0f}, 1.0f,
                 with_alpha(COLOR_CORE_EDGE, u8(a * 80.0f)));
+
+    // Sweep highlight traveling along the separator
+    const f32 sweep_span = f32(VIRTUAL_W) - 80.0f;
+    const f32 sweep_k = std::fmod(t * 0.55f, 1.0f);
+    const f32 sweep_x = 40.0f + sweep_span * sweep_k;
+    const f32 sweep_w = 90.0f;
+    r.set_layer(render::Renderer::Layer::Additive);
+    r.draw_quad({sweep_x - sweep_w * 0.5f, y - 21.5f},
+                {sweep_x + sweep_w * 0.5f, y - 21.5f},
+                {sweep_x + sweep_w * 0.5f, y - 18.5f},
+                {sweep_x - sweep_w * 0.5f, y - 18.5f},
+                with_alpha(COLOR_CORE_INNER, u8(a * 200.0f * (1.0f - std::fabs(sweep_k - 0.5f) * 2.0f))));
+    r.set_layer(render::Renderer::Layer::Alpha);
+
+    // Segment dividers
+    for (int i = 1; i < 6; ++i) {
+        const f32 dx = 40.0f + sweep_span * f32(i) / 6.0f;
+        r.draw_line({dx, y - 23.0f}, {dx, y - 17.0f}, 1.0f,
+                    with_alpha(COLOR_CORE_EDGE, u8(a * 90.0f)));
+    }
+
+    // Left: version + LED
     r.draw_text({40.0f, y}, "INCIDENCE  v0.1.0", 1.8f,
                 with_alpha(COLOR_FACET_EDGE, u8(a * 180.0f)));
+    const f32 led_blink = 0.5f + 0.5f * std::sin(t * 2.2f);
+    r.draw_circle({40.0f + 190.0f, y + 8.0f}, 3.0f,
+                  with_alpha(COLOR_CORE_INNER, u8(a * (140.0f + 100.0f * led_blink))), 8);
+
+    // Center: hints
     const char* mid = "UP / DOWN: SELECT     ENTER: CONFIRM     ESC: QUIT";
     const f32 mw = r.text_width(mid, 1.8f);
     r.draw_text({f32(VIRTUAL_W) * 0.5f - mw * 0.5f, y}, mid, 1.8f,
                 with_alpha(COLOR_FACET_EDGE, u8(a * 200.0f)));
+
+    // Right: station name + flickering status dot
     r.draw_text({f32(VIRTUAL_W) - 300.0f, y}, "HALCYON STATION", 1.8f,
                 with_alpha(COLOR_FACET_EDGE, u8(a * 140.0f)));
+    const f32 sd_blink = 0.5f + 0.5f * std::sin(t * 4.5f);
+    r.draw_circle({f32(VIRTUAL_W) - 40.0f, y + 8.0f}, 2.5f,
+                  with_alpha(COLOR_CORE_EDGE, u8(a * (120.0f + 90.0f * sd_blink))), 8);
 }
 
 // ---------------------------------------------------------------------------
 // Corner decorations.
 // ---------------------------------------------------------------------------
-static void menu_corners(render::Renderer& r, f32 a) {
+static void menu_corners(render::Renderer& r, f32 t, f32 a) {
     const f32 m = 30.0f;
-    const f32 s = 60.0f;
+    const f32 reach = 60.0f + std::sin(t * 0.8f) * 8.0f;
+    const f32 s = reach;
     const Color c = with_alpha(COLOR_CORE_EDGE, u8(a * 180.0f));
+    const Color c_hi = with_alpha(COLOR_CORE_INNER, u8(a * 240.0f));
+
+    // Main corner brackets
     r.draw_line({m, m}, {m + s, m}, 2.0f, c);
     r.draw_line({m, m}, {m, m + s}, 2.0f, c);
     r.draw_line({f32(VIRTUAL_W) - m, m}, {f32(VIRTUAL_W) - m - s, m}, 2.0f, c);
@@ -337,36 +439,131 @@ static void menu_corners(render::Renderer& r, f32 a) {
                 {f32(VIRTUAL_W) - m - s, f32(VIRTUAL_H) - m}, 2.0f, c);
     r.draw_line({f32(VIRTUAL_W) - m, f32(VIRTUAL_H) - m},
                 {f32(VIRTUAL_W) - m, f32(VIRTUAL_H) - m - s}, 2.0f, c);
-    r.draw_circle({m, m}, 3.0f, with_alpha(COLOR_CORE_INNER, u8(a * 240.0f)), 10);
-    r.draw_circle({f32(VIRTUAL_W) - m, m}, 3.0f, with_alpha(COLOR_CORE_INNER, u8(a * 240.0f)), 10);
-    r.draw_circle({m, f32(VIRTUAL_H) - m}, 3.0f, with_alpha(COLOR_CORE_INNER, u8(a * 240.0f)), 10);
-    r.draw_circle({f32(VIRTUAL_W) - m, f32(VIRTUAL_H) - m}, 3.0f, with_alpha(COLOR_CORE_INNER, u8(a * 240.0f)), 10);
+
+    // Inner sub-brackets (parallel, closer to edge)
+    const f32 inner = 18.0f;
+    const f32 sub = 26.0f;
+    r.draw_line({m + inner, m + inner}, {m + inner + sub, m + inner}, 1.0f,
+                with_alpha(COLOR_CORE_EDGE, u8(a * 110.0f)));
+    r.draw_line({m + inner, m + inner}, {m + inner, m + inner + sub}, 1.0f,
+                with_alpha(COLOR_CORE_EDGE, u8(a * 110.0f)));
+    r.draw_line({f32(VIRTUAL_W) - m - inner, m + inner},
+                {f32(VIRTUAL_W) - m - inner - sub, m + inner}, 1.0f,
+                with_alpha(COLOR_CORE_EDGE, u8(a * 110.0f)));
+    r.draw_line({f32(VIRTUAL_W) - m - inner, m + inner},
+                {f32(VIRTUAL_W) - m - inner, m + inner + sub}, 1.0f,
+                with_alpha(COLOR_CORE_EDGE, u8(a * 110.0f)));
+    r.draw_line({m + inner, f32(VIRTUAL_H) - m - inner},
+                {m + inner + sub, f32(VIRTUAL_H) - m - inner}, 1.0f,
+                with_alpha(COLOR_CORE_EDGE, u8(a * 110.0f)));
+    r.draw_line({m + inner, f32(VIRTUAL_H) - m - inner},
+                {m + inner, f32(VIRTUAL_H) - m - inner - sub}, 1.0f,
+                with_alpha(COLOR_CORE_EDGE, u8(a * 110.0f)));
+    r.draw_line({f32(VIRTUAL_W) - m - inner, f32(VIRTUAL_H) - m - inner},
+                {f32(VIRTUAL_W) - m - inner - sub, f32(VIRTUAL_H) - m - inner}, 1.0f,
+                with_alpha(COLOR_CORE_EDGE, u8(a * 110.0f)));
+    r.draw_line({f32(VIRTUAL_W) - m - inner, f32(VIRTUAL_H) - m - inner},
+                {f32(VIRTUAL_W) - m - inner, f32(VIRTUAL_H) - m - inner - sub}, 1.0f,
+                with_alpha(COLOR_CORE_EDGE, u8(a * 110.0f)));
+
+    // Corner dot pulses
+    const f32 pulse = 0.5f + 0.5f * std::sin(t * 3.0f);
+    r.set_layer(render::Renderer::Layer::Additive);
+    r.draw_circle({m, m}, 12.0f + pulse * 6.0f,
+                  with_alpha(COLOR_CORE_EDGE, u8(a * (40.0f + 30.0f * pulse))), 16);
+    r.draw_circle({f32(VIRTUAL_W) - m, m}, 12.0f + pulse * 6.0f,
+                  with_alpha(COLOR_CORE_EDGE, u8(a * (40.0f + 30.0f * pulse))), 16);
+    r.draw_circle({m, f32(VIRTUAL_H) - m}, 12.0f + pulse * 6.0f,
+                  with_alpha(COLOR_CORE_EDGE, u8(a * (40.0f + 30.0f * pulse))), 16);
+    r.draw_circle({f32(VIRTUAL_W) - m, f32(VIRTUAL_H) - m}, 12.0f + pulse * 6.0f,
+                  with_alpha(COLOR_CORE_EDGE, u8(a * (40.0f + 30.0f * pulse))), 16);
+    r.set_layer(render::Renderer::Layer::Alpha);
+    r.draw_circle({m, m}, 3.0f, c_hi, 10);
+    r.draw_circle({f32(VIRTUAL_W) - m, m}, 3.0f, c_hi, 10);
+    r.draw_circle({m, f32(VIRTUAL_H) - m}, 3.0f, c_hi, 10);
+    r.draw_circle({f32(VIRTUAL_W) - m, f32(VIRTUAL_H) - m}, 3.0f, c_hi, 10);
+
+    // Coordinate labels in each corner
+    r.draw_text({m + 8.0f, m + 8.0f}, "00,00", 1.4f,
+                with_alpha(COLOR_FACET_EDGE, u8(a * 130.0f)));
+    const f32 w_label = r.text_width("00,00", 1.4f);
+    r.draw_text({f32(VIRTUAL_W) - m - 8.0f - w_label, m + 8.0f}, "FF,00", 1.4f,
+                with_alpha(COLOR_FACET_EDGE, u8(a * 130.0f)));
+    r.draw_text({m + 8.0f, f32(VIRTUAL_H) - m - 22.0f}, "00,FF", 1.4f,
+                with_alpha(COLOR_FACET_EDGE, u8(a * 130.0f)));
+    r.draw_text({f32(VIRTUAL_W) - m - 8.0f - w_label, f32(VIRTUAL_H) - m - 22.0f},
+                "FF,FF", 1.4f, with_alpha(COLOR_FACET_EDGE, u8(a * 130.0f)));
 }
 
 // ---------------------------------------------------------------------------
 // Small logo drone in the top-left corner.
 // ---------------------------------------------------------------------------
-static void menu_logo_drone(render::Renderer& r, Vec2 c, f32 t, f32 a) {
+static void menu_logo_drone(render::Renderer& r, Vec2 c0, f32 t, f32 a) {
+    const Vec2 c { c0.x, c0.y + std::sin(t * 1.4f) * 4.0f };
     const f32 heading = -HALF_PI + t * 0.3f;
     const f32 span = 2.44f;
     const f32 R_IN = 20.0f;
     const f32 R_OUT = 26.0f;
+
+    // Exhaust trail behind drone
+    const f32 back = heading + PI;
+    for (int i = 0; i < 8; ++i) {
+        const f32 age = std::fmod(t * 0.9f + f32(i) * 0.22f, 1.6f);
+        const f32 life = 1.0f - age / 1.6f;
+        const f32 r_dist = 26.0f + age * 110.0f;
+        const f32 drift = std::sin(t * 2.5f + f32(i) * 1.3f) * 6.0f * age;
+        const Vec2 e { c.x + std::cos(back) * r_dist + drift,
+                       c.y + std::sin(back) * r_dist };
+        r.set_layer(render::Renderer::Layer::Additive);
+        r.draw_circle(e, 1.0f + age * 3.0f,
+                      with_alpha(COLOR_CORE_EDGE, u8(a * life * 130.0f)), 8);
+        r.set_layer(render::Renderer::Layer::Alpha);
+    }
+
+    // Rotating blades (5 segments)
     for (int i = 0; i < 5; ++i) {
         const f32 step = span / 5.0f;
         const f32 a0 = heading - span * 0.5f + f32(i) * step;
         const f32 a1 = a0 + step;
-        const Vec2 pin0 = c + Vec2::from_angle(a0) * R_IN;
-        const Vec2 pin1 = c + Vec2::from_angle(a1) * R_IN;
+        const Vec2 pin0  = c + Vec2::from_angle(a0) * R_IN;
+        const Vec2 pin1  = c + Vec2::from_angle(a1) * R_IN;
         const Vec2 pout0 = c + Vec2::from_angle(a0) * R_OUT;
         const Vec2 pout1 = c + Vec2::from_angle(a1) * R_OUT;
+
+        r.draw_quad(pin0, pin1, pout1, pout0,
+                    with_alpha(COLOR_FACET_FILL, u8(a * 120.0f)));
         r.draw_line(pin0, pin1, 1.5f, with_alpha(COLOR_FACET_EDGE, u8(a * 200.0f)));
         r.draw_line(pout0, pout1, 2.0f, with_alpha(COLOR_FACET_EDGE, u8(a * 255.0f)));
         r.draw_line(pin0, pout0, 0.8f, with_alpha(COLOR_FACET_EDGE, u8(a * 140.0f)));
         r.draw_line(pin1, pout1, 0.8f, with_alpha(COLOR_FACET_EDGE, u8(a * 140.0f)));
+
+        // Tiny normal-direction tick beyond each blade edge
+        const f32 mid = (a0 + a1) * 0.5f;
+        const Vec2 nn { std::cos(mid), std::sin(mid) };
+        r.draw_line({c.x + nn.x * (R_OUT + 2.0f), c.y + nn.y * (R_OUT + 2.0f)},
+                    {c.x + nn.x * (R_OUT + 10.0f), c.y + nn.y * (R_OUT + 10.0f)},
+                    1.0f, with_alpha(COLOR_CORE_EDGE, u8(a * 200.0f)));
     }
+
+    // Glow pulse under core
+    const f32 pulse = 0.5f + 0.5f * std::sin(t * 3.0f);
+    r.set_layer(render::Renderer::Layer::Additive);
+    r.draw_circle(c, 22.0f + pulse * 8.0f,
+                  with_alpha(COLOR_CORE_EDGE, u8(a * (28.0f + 22.0f * pulse))), 20);
+    r.set_layer(render::Renderer::Layer::Alpha);
+
+    // Core
     r.draw_circle(c, 8.0f, with_alpha(COLOR_CORE_FILL, u8(a * 230.0f)), 16);
     r.draw_ring(c, 8.0f, 9.5f, with_alpha(COLOR_CORE_EDGE, u8(a * 240.0f)), 20);
     r.draw_circle(c, 2.5f, with_alpha(COLOR_CORE_INNER, u8(a * 255.0f)), 10);
+
+    // 4 sub-dots around core that blink in sequence
+    for (int i = 0; i < 4; ++i) {
+        const f32 ang = t * 0.6f + TAU * f32(i) / 4.0f;
+        const Vec2 p { c.x + std::cos(ang) * 14.0f, c.y + std::sin(ang) * 14.0f };
+        const f32 bl = 0.5f + 0.5f * std::sin(t * 4.0f + f32(i) * 1.4f);
+        r.draw_circle(p, 1.5f, with_alpha(COLOR_CORE_INNER, u8(a * (90.0f + 130.0f * bl))), 6);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -384,37 +581,14 @@ void App::draw_main_menu(render::Renderer& r) const {
 
     menu_starfield(r, t, a * 0.9f);
     menu_horizon_grid(r, t, a * 0.7f);
-    menu_corners(r, a);
+    menu_corners(r, t, a);
     menu_logo_drone(r, {80.0f, 60.0f}, t, a);
 
     // Title block
     menu_title(r, {f32(VIRTUAL_W) * 0.5f, 230.0f}, t, a);
 
     // Left-side decorative drone
-    {
-        const Vec2 dp { f32(VIRTUAL_W) * 0.15f, 700.0f };
-        const f32 heading = -HALF_PI + std::sin(t * 0.8f) * 0.4f;
-        const f32 span = 2.44f;
-        const f32 R_IN = 46.0f;
-        const f32 R_OUT = 58.0f;
-        for (int i = 0; i < 5; ++i) {
-            const f32 step = span / 5.0f;
-            const f32 a0 = heading - span * 0.5f + f32(i) * step;
-            const f32 a1 = a0 + step;
-            const Vec2 pin0 = dp + Vec2::from_angle(a0) * R_IN;
-            const Vec2 pin1 = dp + Vec2::from_angle(a1) * R_IN;
-            const Vec2 pout0 = dp + Vec2::from_angle(a0) * R_OUT;
-            const Vec2 pout1 = dp + Vec2::from_angle(a1) * R_OUT;
-            r.draw_quad(pin0, pin1, pout1, pout0, with_alpha(COLOR_FACET_FILL, u8(a * 140.0f)));
-            r.draw_line(pin0, pin1, 2.0f, with_alpha(COLOR_FACET_EDGE, u8(a * 220.0f)));
-            r.draw_line(pout0, pout1, 3.0f, with_alpha(COLOR_FACET_EDGE, u8(a * 255.0f)));
-            r.draw_line(pin0, pout0, 1.0f, with_alpha(COLOR_FACET_EDGE, u8(a * 160.0f)));
-            r.draw_line(pin1, pout1, 1.0f, with_alpha(COLOR_FACET_EDGE, u8(a * 160.0f)));
-        }
-        r.draw_circle(dp, 14.0f, with_alpha(COLOR_CORE_FILL, u8(a * 230.0f)), 20);
-        r.draw_ring(dp, 14.0f, 16.0f, with_alpha(COLOR_CORE_EDGE, u8(a * 255.0f)), 24);
-        r.draw_circle(dp, 4.0f, with_alpha(COLOR_CORE_INNER, u8(a * 255.0f)), 12);
-    }
+    menu_left_drone(r, { f32(VIRTUAL_W) * 0.15f, 700.0f }, t, a);
 
     // Save slot existence
     FILE* sf = std::fopen("save.sav", "r");
@@ -437,14 +611,14 @@ void App::draw_main_menu(render::Renderer& r) const {
     const f32 item_dy = 82.0f;
     for (int i = 0; i < 3; ++i) {
         const Vec2 c { item_x, item_y0 + f32(i) * item_dy };
-        const f32 appear_t = t - (1.4f + f32(i) * 0.14f);
+        const f32 appear_t = t - (0.20f + f32(i) * 0.10f);
         menu_item(r, c, items[i], menu_cursor_ == i, enabled[i], t, a, appear_t);
     }
 
     // Panels
     menu_save_panel(r, {220.0f, 780.0f}, 340.0f, 130.0f,
                     has_save, sroom, slevel, a, t);
-    menu_bottom_bar(r, a);
+    menu_bottom_bar(r, t, a);
 
     {
         const char* quote = "\"You have no gun. You have a normal vector.\"";
