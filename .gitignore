@@ -50,3 +50,4 @@ saves/
 *.log
 # Save game
 save.sav
+*.bak
