@@ -5,6 +5,7 @@
 #include "audio/audio.hpp"
 #include "game/save.hpp"
 #include "game/room.hpp"
+#include "render/drone_fx.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -759,6 +760,7 @@ void World::draw(render::Renderer& r) const {
     if (warden_active_) warden_.draw(r);
     for (const auto& p : projectiles_) p.draw(r);
     drone_.draw(r);
+    drone_fx::draw_reticle(r, drone_, character_, f32(platform::time_seconds()));
 
     r.set_layer(render::Renderer::Layer::Additive);
 

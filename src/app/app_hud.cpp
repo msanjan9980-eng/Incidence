@@ -8,36 +8,11 @@
 namespace inc {
 
 // =============================================================================
-// Gameplay HUD. Called each frame from the Playing branch of App::render.
-// Uses only state that already exists on World / Character.
+// Gameplay HUD overlay. World::draw owns LV / XP / hearts / kills; this file
+// owns room/status, the sector scan frame, warden warning, and CRT post-FX.
 // =============================================================================
 void App::draw_gameplay_hud(render::Renderer& r) const {
     const f32 t = f32(platform::time_seconds());
-
-    // -----------------------------------------------------------------
-    // Top-left: level + XP bar + unspent point badges
-    // -----------------------------------------------------------------
-    {
-        const game::Character& ch = world_.character();
-        char buf[32];
-        std::snprintf(buf, sizeof(buf), "LV %02d", ch.level);
-        r.draw_text({40.0f, 40.0f}, buf, 2.4f, COLOR_CORE_INNER);
-
-        hud::hud_bar(r, {360.0f, 50.0f}, 320.0f, 14.0f,
-                     "XP", ch.xp_progress(), t,
-                     COLOR_CORE_EDGE, COLOR_CORE_EDGE, false);
-
-        f32 bx = 40.0f;
-        if (ch.stat_points > 0) {
-            std::snprintf(buf, sizeof(buf), "+%d STAT", ch.stat_points);
-            r.draw_text({bx, 72.0f}, buf, 1.8f, COLOR_CORE_INNER);
-            bx += 120.0f;
-        }
-        if (ch.skill_points > 0) {
-            std::snprintf(buf, sizeof(buf), "+%d SKILL", ch.skill_points);
-            r.draw_text({bx, 72.0f}, buf, 1.8f, COLOR_CORE_INNER);
-        }
-    }
 
     // -----------------------------------------------------------------
     // Top-right: room + status
@@ -65,7 +40,7 @@ void App::draw_gameplay_hud(render::Renderer& r) const {
     }
 
     // -----------------------------------------------------------------
-    // Bottom-right: sector scan frame (placeholder for minimap)
+    // Bottom-right: sector scan frame (placeholder)
     // -----------------------------------------------------------------
     {
         const f32 size = 180.0f;
@@ -89,7 +64,7 @@ void App::draw_gameplay_hud(render::Renderer& r) const {
     }
 
     // -----------------------------------------------------------------
-    // Cohesive CRT overlay - subtler than the menu version
+    // Cohesive CRT overlay
     // -----------------------------------------------------------------
     fx::scanlines(r, 0.55f, 4.0f, 24);
     fx::film_grain(r, t, 0.4f, 160, 1.0f);
