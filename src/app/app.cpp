@@ -155,23 +155,99 @@ void App::step(f32 dt) {
             in.key_pressed[static_cast<int>(platform::Key::Space)];
         if (activate) {
             if (menu_cursor_ == 0) {
-                screen_ = game::Screen::Intro;
-                intro_time_ = 0.0f;
-    main_menu_time_ = 0.0f;
-    menu_cursor_    = 0;
+                profile_input_len_ = 0;
+                profile_input_name_[0] = 0;
+                screen_ = game::Screen::ProfileCreate;
+                main_menu_time_ = 0.0f;
+                menu_cursor_ = 0;
             } else if (menu_cursor_ == 1) {
-                FILE* sf = std::fopen("save.sav", "r");
-                const bool has_save = (sf != nullptr);
-                if (sf) std::fclose(sf);
-                if (has_save) {
-                    game::SaveData sd;
-                    if (game::load_game("save.sav", sd)) {
-                        world_.character() = sd.character;
-                        world_.jump_to_room(sd.current_room);
-                        world_.set_rooms_visited(sd.rooms_visited);
-                    } else {
-                        world_.reset();
-                    }
+                profile_list_count_ = game::profiles_list(profile_list_, game::PROFILE_MAX);
+                profile_cursor_ = 0;
+                screen_ = game::Screen::ProfileSelect;
+            } else {
+                running_ = false;
+            }
+        }
+        break;
+    }
+
+    case game::Screen::ProfileCreate: {
+        static const platform::Key s_letters[26] = {
+            platform::Key::A, platform::Key::B, platform::Key::C, platform::Key::D,
+            platform::Key::E, platform::Key::F, platform::Key::G, platform::Key::H,
+            platform::Key::I, platform::Key::J, platform::Key::K, platform::Key::L,
+            platform::Key::M, platform::Key::N, platform::Key::O, platform::Key::P,
+            platform::Key::Q, platform::Key::R, platform::Key::S, platform::Key::T,
+            platform::Key::U, platform::Key::V, platform::Key::W, platform::Key::X,
+            platform::Key::Y, platform::Key::Z
+        };
+        static const platform::Key s_digits[10] = {
+            platform::Key::Num0, platform::Key::Num1, platform::Key::Num2,
+            platform::Key::Num3, platform::Key::Num4, platform::Key::Num5,
+            platform::Key::Num6, platform::Key::Num7, platform::Key::Num8,
+            platform::Key::Num9
+        };
+        if (in.key_pressed[static_cast<int>(platform::Key::Escape)]) {
+            screen_ = game::Screen::MainMenu;
+            break;
+        }
+        if (profile_input_len_ < game::PROFILE_MAX_NAME) {
+            for (int i = 0; i < 26; ++i) {
+                if (in.key_pressed[static_cast<int>(s_letters[i])]) {
+                    profile_input_name_[profile_input_len_++] = char('A' + i);
+                    profile_input_name_[profile_input_len_] = 0;
+                }
+            }
+            for (int i = 0; i < 10; ++i) {
+                if (in.key_pressed[static_cast<int>(s_digits[i])]) {
+                    profile_input_name_[profile_input_len_++] = char('0' + i);
+                    profile_input_name_[profile_input_len_] = 0;
+                }
+            }
+        }
+        if (in.key_pressed[static_cast<int>(platform::Key::Enter)]) {
+            if (game::profile_name_valid(profile_input_name_)) {
+                if (game::profile_create(profile_input_name_)) {
+                    game::profile_set_active(profile_input_name_);
+                    world_.reset();
+                    logs_   = game::LogState{};
+                    quests_ = game::QuestState{};
+                    screen_ = game::Screen::Intro;
+                    intro_time_ = 0.0f;
+                }
+            }
+        }
+        break;
+    }
+
+    case game::Screen::ProfileSelect: {
+        if (in.key_pressed[static_cast<int>(platform::Key::Escape)]) {
+            screen_ = game::Screen::MainMenu;
+            break;
+        }
+        if (profile_list_count_ > 0) {
+            if (in.key_pressed[static_cast<int>(platform::Key::Up)]) {
+                if (profile_cursor_ > 0) --profile_cursor_;
+                else profile_cursor_ = profile_list_count_ - 1;
+            }
+            if (in.key_pressed[static_cast<int>(platform::Key::Down)]) {
+                if (profile_cursor_ < profile_list_count_ - 1) ++profile_cursor_;
+                else profile_cursor_ = 0;
+            }
+            if (in.key_pressed[static_cast<int>(platform::Key::D)]) {
+                if (game::profile_delete(profile_list_[profile_cursor_].name)) {
+                    profile_list_count_ = game::profiles_list(profile_list_, game::PROFILE_MAX);
+                    if (profile_cursor_ >= profile_list_count_) profile_cursor_ = profile_list_count_ - 1;
+                    if (profile_cursor_ < 0) profile_cursor_ = 0;
+                }
+            }
+            if (in.key_pressed[static_cast<int>(platform::Key::Enter)]) {
+                game::profile_set_active(profile_list_[profile_cursor_].name);
+                game::SaveData sd;
+                if (game::profile_load_active(sd)) {
+                    world_.character() = sd.character;
+                    world_.jump_to_room(sd.current_room);
+                    world_.set_rooms_visited(sd.rooms_visited);
                     logs_   = game::LogState{};
                     quests_ = game::QuestState{};
                     map_cursor_ = world_.room_index();
@@ -185,14 +261,17 @@ void App::step(f32 dt) {
                     log_archive_open_     = false;
                     quest_log_open_       = false;
                     world_map_open_       = false;
+                } else {
+                    world_.reset();
+                    logs_   = game::LogState{};
+                    quests_ = game::QuestState{};
+                    screen_ = game::Screen::Intro;
+                    intro_time_ = 0.0f;
                 }
-            } else {
-                running_ = false;
             }
         }
         break;
     }
-
     case game::Screen::Intro: {
         intro_time_ += dt;
         if (any_pressed) { screen_ = game::Screen::Title; title_time_ = 0.0f; break; }
@@ -527,6 +606,12 @@ void App::render() {
     switch (screen_) {
     case game::Screen::MainMenu:
         draw_main_menu(renderer_);
+        break;
+    case game::Screen::ProfileCreate:
+        draw_profile_create(renderer_);
+        break;
+    case game::Screen::ProfileSelect:
+        draw_profile_select(renderer_);
         break;
     case game::Screen::Intro:
         draw_intro(renderer_);
