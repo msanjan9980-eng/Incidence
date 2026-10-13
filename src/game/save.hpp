@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "game/character.hpp"
 #include <string>
@@ -11,12 +11,13 @@ namespace inc::game {
 struct SaveData {
     Character character;
     int       current_room = 0;
+    u16 rooms_visited = 0;
     bool      has_save     = false;
 };
 
 // Save `ch` and `current_room` to a text file. Returns true on success.
 // Format is a flat JSON-ish object — human readable, easy to hand-edit.
-bool save_game(const std::string& path, const Character& ch, int current_room);
+bool save_game(const std::string& path, const Character& ch, int current_room, u16 rooms_visited);
 
 // Load a save file. Returns true if a valid save was found and parsed.
 // On failure, `out.has_save` is false and the character is left untouched.

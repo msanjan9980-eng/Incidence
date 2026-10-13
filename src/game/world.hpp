@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "core/math.hpp"
 #include "core/vec2.hpp"
@@ -46,6 +46,14 @@ public:
             && (rooms_cleared_ & (1u << index)) != 0;
     }
 
+    [[nodiscard]] bool is_room_visited(int index) const noexcept {
+        return index >= 0 && index < 16
+            && (rooms_visited_ & (1u << index)) != 0;
+    }
+
+    [[nodiscard]] u16 rooms_visited() const noexcept { return rooms_visited_; }
+    void set_rooms_visited(u16 v) noexcept { rooms_visited_ = v; }
+
     [[nodiscard]] Character&       character()       noexcept { return character_; }
     [[nodiscard]] const Character& character() const noexcept { return character_; }
 
@@ -91,6 +99,7 @@ private:
     bool warden_defeated_   = false;
 
     u16  rooms_cleared_       = 0;
+    u16  rooms_visited_       = 0;
     f32  door_cooldown_       = 0.0f;
     f32  room_clear_pulse_    = -1.0f;
     f32  warden_death_timer_  = -1.0f;

@@ -1,4 +1,4 @@
-﻿#include "game/save.hpp"
+#include "game/save.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -6,7 +6,7 @@
 
 namespace inc::game {
 
-bool save_game(const std::string& path, const Character& ch, int current_room) {
+bool save_game(const std::string& path, const Character& ch, int current_room, u16 rooms_visited) {
     FILE* f = std::fopen(path.c_str(), "w");
     if (!f) return false;
 
@@ -26,7 +26,8 @@ bool save_game(const std::string& path, const Character& ch, int current_room) {
         "  \"eqc\": %d,\n"
         "  \"eqh\": %d,\n"
         "  \"inv\": %d,\n"
-        "  \"room\": %d\n"
+        "  \"room\": %d,\n"
+        "  \"rvis\": %d\n"
         "}\n",
         ch.level,
         ch.xp,
@@ -41,7 +42,8 @@ bool save_game(const std::string& path, const Character& ch, int current_room) {
         int(ch.equipped.core),
         int(ch.equipped.hull),
         int(ch.inventory.unlocked),
-        current_room);
+        current_room,
+        unsigned(rooms_visited));
 
     std::fclose(f);
     return true;
@@ -121,6 +123,12 @@ bool load_game(const std::string& path, SaveData& out) {
     if (eqh < 0 || eqh >= int(HullId::Count))  eqh = 0;
     if (inv < 0) inv = 73;
     inv &= 0x01FF;
+
+    {
+        int rvis = 0;
+        find_int(buf, "\"rvis\"", rvis);
+        out.rooms_visited = u16(rvis & 0xFFFF);
+    }
 
     out.character.level            = lv;
     out.character.xp               = xp;

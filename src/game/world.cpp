@@ -1,4 +1,4 @@
-﻿#include "game/world.hpp"
+#include "game/world.hpp"
 #include "render/renderer.hpp"
 #include "platform/platform.hpp"
 #include "audio/audio.hpp"
@@ -90,6 +90,7 @@ World::World() { reset(); }
 void World::reset() {
     character_       = Character{};
     rooms_cleared_   = 0;
+    rooms_visited_   = 0;
     door_cooldown_   = 0.0f;
     room_clear_pulse_= -1.0f;
     warden_death_timer_ = -1.0f;
@@ -130,6 +131,7 @@ void World::load_room(int index) {
 
     const Room& r = room_at(index);
     current_room_ = index;
+    rooms_visited_ |= u16(1u << index);
     warden_active_ = false;
 
     wall_count_ = r.wall_count;
@@ -238,7 +240,7 @@ void World::award_kill_xp(EnemyType type) {
     if (gained > 0) {
         levelup_banner_timer_ = 2.0f;
         levelup_banner_level_ = character_.level;
-        save_game("save.sav", character_, current_room_);
+        save_game("save.sav", character_, current_room_, rooms_visited_);
     }
 }
 
@@ -520,7 +522,7 @@ bool World::resolve_warden_collisions(Projectile& p) {
                 levelup_banner_timer_ = 2.0f;
                 levelup_banner_level_ = character_.level;
             }
-            save_game("save.sav", character_, current_room_);
+            save_game("save.sav", character_, current_room_, rooms_visited_);
             std::fprintf(stderr, "[world] WARDEN DEFEATED\n");
             std::fflush(stderr);
         }

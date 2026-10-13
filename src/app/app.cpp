@@ -150,6 +150,7 @@ void App::step(f32 dt) {
             if (game::load_game("save.sav", sd)) {
                 world_.character() = sd.character;
                 world_.jump_to_room(sd.current_room);
+                world_.set_rooms_visited(sd.rooms_visited);
             } else {
                 world_.reset();
             }
@@ -287,7 +288,7 @@ void App::step(f32 dt) {
                 }
                 if (in.key_pressed[static_cast<int>(platform::Key::Enter)]) {
                     if (map_cursor_ < game::ROOM_COUNT &&
-                        world_.is_room_cleared(map_cursor_)) {
+                        world_.is_room_visited(map_cursor_)) {
                         world_.travel_to_room(map_cursor_);
                         world_map_open_ = false;
                     }
