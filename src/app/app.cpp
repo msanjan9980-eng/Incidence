@@ -192,6 +192,12 @@ void App::step(f32 dt) {
             screen_ = game::Screen::MainMenu;
             break;
         }
+        if (in.key_pressed[static_cast<int>(platform::Key::Backspace)]) {
+            if (profile_input_len_ > 0) {
+                profile_input_len_--;
+                profile_input_name_[profile_input_len_] = 0;
+            }
+        }
         if (profile_input_len_ < game::PROFILE_MAX_NAME) {
             for (int i = 0; i < 26; ++i) {
                 if (in.key_pressed[static_cast<int>(s_letters[i])]) {
@@ -204,6 +210,13 @@ void App::step(f32 dt) {
                     profile_input_name_[profile_input_len_++] = char('0' + i);
                     profile_input_name_[profile_input_len_] = 0;
                 }
+            }
+            if (in.key_pressed[static_cast<int>(platform::Key::Minus)]) {
+                const bool shifted =
+                    in.key_down[static_cast<int>(platform::Key::ShiftL)] ||
+                    in.key_down[static_cast<int>(platform::Key::ShiftR)];
+                profile_input_name_[profile_input_len_++] = shifted ? '_' : '-';
+                profile_input_name_[profile_input_len_] = 0;
             }
         }
         if (in.key_pressed[static_cast<int>(platform::Key::Enter)]) {

@@ -11,7 +11,7 @@ enum class Key : std::uint16_t {
     N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
     Num0, Num1, Num2, Num3, Num4, Num5, Num6, Num7, Num8, Num9,
     Left, Right, Up, Down,
-    Space, Enter, Escape, Tab,
+    Space, Enter, Escape, Tab, Backspace, Minus,
     ShiftL, ShiftR, CtrlL, CtrlR, AltL, AltR,
     MouseLeft, MouseRight, MouseMiddle,
     GamepadA, GamepadB, GamepadX, GamepadY,

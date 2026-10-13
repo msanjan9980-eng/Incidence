@@ -65,6 +65,8 @@ Key translate_key(sapp_keycode k) {
         case SAPP_KEYCODE_DOWN:  return Key::Down;
 
         case SAPP_KEYCODE_SPACE:  return Key::Space;
+    case SAPP_KEYCODE_BACKSPACE: return Key::Backspace;
+    case SAPP_KEYCODE_MINUS:     return Key::Minus;
         case SAPP_KEYCODE_ENTER:  return Key::Enter;
         case SAPP_KEYCODE_ESCAPE: return Key::Escape;
         case SAPP_KEYCODE_TAB:    return Key::Tab;
