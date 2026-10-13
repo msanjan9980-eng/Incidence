@@ -8,6 +8,7 @@
 #include "game/turret.hpp"
 #include "game/projectile.hpp"
 #include "game/room.hpp"
+#include "game/warden.hpp"
 
 namespace inc::render { class Renderer; }
 namespace inc::platform { struct InputState; }
@@ -33,7 +34,7 @@ public:
     [[nodiscard]] int  kills()      const noexcept { return kills_; }
     [[nodiscard]] i32  score()      const noexcept { return score_; }
     [[nodiscard]] int  room_index() const noexcept { return current_room_; }
-    [[nodiscard]] f32  last_incidence_deg() const noexcept { return last_incidence_deg_; }
+    [[nodiscard]] bool warden_active() const noexcept { return warden_active_; }
 
 private:
     void load_room(int index);
@@ -43,28 +44,34 @@ private:
                       Color core_c, Color glow_c);
     void spawn_flash(Vec2 pos);
 
+    void spawn_warden();
+    void step_warden(f32 dt);
+    bool resolve_warden_collisions(Projectile& p);
+
     bool resolve_collisions(Projectile& p);
     bool collide_with_walls(Projectile& p);
 
-    // ---- Content --------------------------------------------------------
+    // ---- Content -------------------------------------------------------
     Drone      drone_;
     Turret     turrets_[8];
     Projectile projectiles_[256];
     HitFlash   flashes_[32];
+    Warden     warden_;
 
     Wall       walls_[32];
     int        wall_count_     = 0;
     int        turret_count_   = 0;
     int        current_room_   = 0;
+    bool       warden_active_  = false;
 
-    // ---- Player state ---------------------------------------------------
+    // ---- Player state --------------------------------------------------
     int  player_hp_ = 3;
     int  kills_     = 0;
     i32  score_     = 0;
 
-    f32  room_clear_timer_ = -1.0f;
-
-    f32  last_incidence_deg_ = 0.0f;
+    f32  room_clear_timer_    = -1.0f;
+    f32  warden_death_timer_  = -1.0f;
+    f32  last_incidence_deg_  = 0.0f;
 };
 
 } // namespace inc::game
