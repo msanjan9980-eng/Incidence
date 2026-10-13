@@ -1,6 +1,7 @@
-﻿#include "app/app.hpp"
+#include "app/app.hpp"
 #include "audio/audio.hpp"
 #include "game/save.hpp"
+#include "game/room.hpp"
 
 #include "sokol_app.h"
 
@@ -11,23 +12,6 @@
 namespace inc {
 
 static constexpr int MAX_SUBSTEPS_PER_FRAME = 8;
-
-struct IntroCard {
-    const char* small;
-    const char* large;
-    f32         duration;
-    Color       accent;
-};
-
-static constexpr IntroCard INTRO_CARDS[] = {
-    { "HALCYON STATION",                                 "YEAR 207",              3.5f, COLOR_CORE_EDGE },
-    { "Two hundred years ago, the ring folded space.",   "",                      3.5f, COLOR_FACET_EDGE },
-    { "It worked.",                                      "Everyone died.",        3.5f, COLOR_ENEMY_EDGE },
-    { "The station AI, THEOREM, is still running.",      "PRESERVE THE RING.",    4.0f, COLOR_ENEMY_CORE },
-    { "You are KITE-9, the last functioning deflector.", "YOU HAVE NO GUN.",      4.0f, COLOR_CORE_EDGE },
-    { "You have a surface. The surface obeys one law.",  "REFLECT.",              4.0f, COLOR_FACET_EDGE },
-};
-static constexpr int INTRO_CARD_COUNT = sizeof(INTRO_CARDS) / sizeof(INTRO_CARDS[0]);
 
 static const char* ROOM_BLURB[] = {
     "Central ring junction. The Lancers are still firing at micrometeorites that expired weeks ago.",
@@ -48,10 +32,10 @@ static const char* ROOM_NAME[] = {
 };
 
 static Color room_arc_color(int idx) {
-    if (idx < 3)  return COLOR_CORE_EDGE;
-    if (idx < 5)  return COLOR_LEAD_EDGE;
-    if (idx < 6)  return COLOR_BANKER_EDGE;
-    if (idx < 8)  return COLOR_ENEMY_EDGE;
+    if (idx < 3) return COLOR_CORE_EDGE;
+    if (idx < 5) return COLOR_LEAD_EDGE;
+    if (idx < 6) return COLOR_BANKER_EDGE;
+    if (idx < 8) return COLOR_ENEMY_EDGE;
     return COLOR_CORE_INNER;
 }
 
@@ -89,6 +73,7 @@ void App::init() {
     intro_time_    = 0.0f;
     title_time_    = 0.0f;
     victory_time_  = 0.0f;
+    map_cursor_    = 0;
 
     std::fprintf(stderr, "[incidence] init - virtual %gx%g, fixed dt %g Hz\n",
                  static_cast<double>(VIRTUAL_W),
@@ -111,6 +96,11 @@ void App::frame() {
     render();
     if (platform::quit_requested()) running_ = false;
     ++frame_count_;
+}
+
+void App::shutdown() {
+    audio::shutdown();
+    renderer_.shutdown();
 }
 
 void App::advance_simulation(double frame_dt) {
@@ -144,580 +134,350 @@ void App::step(f32 dt) {
     }
 
     switch (screen_) {
-        case game::Screen::Intro: {
-            intro_time_ += dt;
-            if (any_pressed) { screen_ = game::Screen::Title; title_time_ = 0.0f; break; }
-            f32 total = 0.0f;
-            for (int i = 0; i < INTRO_CARD_COUNT; ++i) total += INTRO_CARDS[i].duration;
-            if (intro_time_ >= total) { screen_ = game::Screen::Title; title_time_ = 0.0f; }
-            break;
+    case game::Screen::Intro: {
+        intro_time_ += dt;
+        if (any_pressed) { screen_ = game::Screen::Title; title_time_ = 0.0f; break; }
+        f32 total = 0.0f;
+        for (int i = 0; i < 6; ++i) total += 3.5f;
+        if (intro_time_ >= total) { screen_ = game::Screen::Title; title_time_ = 0.0f; }
+        break;
+    }
+
+    case game::Screen::Title: {
+        title_time_ += dt;
+        if (any_pressed && title_time_ > 0.4f) {
+            game::SaveData sd;
+            if (game::load_game("save.sav", sd)) {
+                world_.character() = sd.character;
+                world_.jump_to_room(sd.current_room);
+            } else {
+                world_.reset();
+            }
+            logs_   = game::LogState{};
+            quests_ = game::QuestState{};
+            map_cursor_ = world_.room_index();
+            screen_ = game::Screen::Playing;
+            last_room_shown_      = -1;
+            last_warden_state_    = false;
+            room_intro_timer_     = -1.0f;
+            character_sheet_open_ = false;
+            skill_tree_open_      = false;
+            equipment_panel_open_ = false;
+            log_archive_open_     = false;
+            quest_log_open_       = false;
+            world_map_open_       = false;
         }
-        case game::Screen::Title: {
-            title_time_ += dt;
-            if (any_pressed && title_time_ > 0.4f) {
-                game::SaveData sd;
-                if (game::load_game("save.sav", sd)) {
-                    world_.character() = sd.character;
-                    world_.jump_to_room(sd.current_room);
+        break;
+    }
+
+    case game::Screen::Playing: {
+        if (logs_.playing()) {
+            const int idx = logs_.active_index;
+            const int body_len = int(std::strlen(game::log_at(idx).body));
+
+            if (in.key_pressed[static_cast<int>(platform::Key::Space)] ||
+                in.key_pressed[static_cast<int>(platform::Key::Enter)]) {
+                if (logs_.fully_shown) {
+                    logs_.end();
                 } else {
-                    world_.reset();
+                    logs_.chars_shown = body_len;
+                    logs_.fully_shown = true;
                 }
-                logs_   = game::LogState{};
-                quests_ = game::QuestState{};
-                screen_ = game::Screen::Playing;
-                last_room_shown_      = -1;
-                last_warden_state_    = false;
-                room_intro_timer_     = -1.0f;
-                character_sheet_open_ = false;
-                skill_tree_open_      = false;
-                equipment_panel_open_ = false;
-                log_archive_open_     = false;
-                quest_log_open_       = false;
+            }
+
+            if (!logs_.fully_shown) {
+                logs_.char_timer += dt;
+                logs_.chars_shown = int(logs_.char_timer * 45.0f);
+                if (logs_.chars_shown >= body_len) {
+                    logs_.chars_shown = body_len;
+                    logs_.fully_shown = true;
+                }
             }
             break;
         }
-        case game::Screen::Playing: {
-            // ---- Log overlay: captures ALL input while playing ----------
-            if (logs_.playing()) {
-                const int idx = logs_.active_index;
-                const int body_len = int(std::strlen(game::log_at(idx).body));
 
-                if (in.key_pressed[static_cast<int>(platform::Key::Space)] ||
-                    in.key_pressed[static_cast<int>(platform::Key::Enter)]) {
-                    if (logs_.fully_shown) {
-                        logs_.end();
-                    } else {
-                        logs_.chars_shown = body_len;
-                        logs_.fully_shown = true;
-                    }
-                }
-
-                if (!logs_.fully_shown) {
-                    logs_.char_timer += dt;
-                    logs_.chars_shown = int(logs_.char_timer * 45.0f);
-                    if (logs_.chars_shown >= body_len) {
-                        logs_.chars_shown = body_len;
-                        logs_.fully_shown = true;
-                    }
-                }
-                break;
-            }
-
-            // ---- Panel toggles -----------------------------------------
-            if (in.key_pressed[static_cast<int>(platform::Key::Tab)]) {
-                character_sheet_open_ = !character_sheet_open_;
-                if (character_sheet_open_) { skill_tree_open_ = false; equipment_panel_open_ = false; log_archive_open_ = false; quest_log_open_ = false; }
-            }
-            if (in.key_pressed[static_cast<int>(platform::Key::K)]) {
-                skill_tree_open_ = !skill_tree_open_;
-                if (skill_tree_open_) { character_sheet_open_ = false; equipment_panel_open_ = false; log_archive_open_ = false; quest_log_open_ = false; }
-            }
-            if (in.key_pressed[static_cast<int>(platform::Key::I)]) {
-                equipment_panel_open_ = !equipment_panel_open_;
-                if (equipment_panel_open_) { character_sheet_open_ = false; skill_tree_open_ = false; log_archive_open_ = false; quest_log_open_ = false; }
-            }
-            if (in.key_pressed[static_cast<int>(platform::Key::L)]) {
-                log_archive_open_ = !log_archive_open_;
-                if (log_archive_open_) { character_sheet_open_ = false; skill_tree_open_ = false; equipment_panel_open_ = false; quest_log_open_ = false; }
-            }
-            if (in.key_pressed[static_cast<int>(platform::Key::J)]) {
-                quest_log_open_ = !quest_log_open_;
-                if (quest_log_open_) { character_sheet_open_ = false; skill_tree_open_ = false; equipment_panel_open_ = false; log_archive_open_ = false; }
-            }
-
-            // ---- Character sheet input ----------------------------------
+        if (in.key_pressed[static_cast<int>(platform::Key::Tab)]) {
+            character_sheet_open_ = !character_sheet_open_;
             if (character_sheet_open_) {
-                if (in.key_pressed[static_cast<int>(platform::Key::Escape)]) {
-                    character_sheet_open_ = false;
-                }
-                if (in.key_pressed[static_cast<int>(platform::Key::Num1)])
-                    world_.character().spend_point(0);
-                if (in.key_pressed[static_cast<int>(platform::Key::Num2)])
-                    world_.character().spend_point(1);
-                if (in.key_pressed[static_cast<int>(platform::Key::Num3)])
-                    world_.character().spend_point(2);
-                if (in.key_pressed[static_cast<int>(platform::Key::Num4)])
-                    world_.character().spend_point(3);
-                break;
+                skill_tree_open_      = false;
+                equipment_panel_open_ = false;
+                log_archive_open_     = false;
+                quest_log_open_       = false;
+                world_map_open_       = false;
             }
-
-            // ---- Skill tree input ---------------------------------------
-            if (skill_tree_open_) {
-                if (in.key_pressed[static_cast<int>(platform::Key::Escape)]) {
-                    skill_tree_open_ = false;
-                    break;
-                }
-                if (in.key_pressed[static_cast<int>(platform::Key::Left)])
-                    skill_cursor_branch_ = (skill_cursor_branch_ + 2) % 3;
-                if (in.key_pressed[static_cast<int>(platform::Key::Right)])
-                    skill_cursor_branch_ = (skill_cursor_branch_ + 1) % 3;
-                if (in.key_pressed[static_cast<int>(platform::Key::Up)])
-                    skill_cursor_row_ = (skill_cursor_row_ + 4) % 5;
-                if (in.key_pressed[static_cast<int>(platform::Key::Down)])
-                    skill_cursor_row_ = (skill_cursor_row_ + 1) % 5;
-                if (in.key_pressed[static_cast<int>(platform::Key::Enter)] ||
-                    in.key_pressed[static_cast<int>(platform::Key::Space)]) {
-                    const int sid = skill_cursor_branch_ * 5 + skill_cursor_row_;
-                    world_.character().learn_skill(game::SkillId(sid));
-                }
-                break;
-            }
-
-            // ---- Equipment panel input ----------------------------------
-            if (equipment_panel_open_) {
-                if (in.key_pressed[static_cast<int>(platform::Key::Escape)]) {
-                    equipment_panel_open_ = false;
-                    break;
-                }
-                if (in.key_pressed[static_cast<int>(platform::Key::Up)])
-                    equipment_slot_ = (equipment_slot_ + 2) % 3;
-                if (in.key_pressed[static_cast<int>(platform::Key::Down)])
-                    equipment_slot_ = (equipment_slot_ + 1) % 3;
-                const bool left  = in.key_pressed[static_cast<int>(platform::Key::Left)];
-                const bool right = in.key_pressed[static_cast<int>(platform::Key::Right)];
-                if (left || right) {
-                    const int dir = left ? -1 : 1;
-                    game::Character& ch = world_.character();
-                    if (equipment_slot_ == 0)
-                        ch.equipped.facet = ch.inventory.next_facet(ch.equipped.facet, dir);
-                    else if (equipment_slot_ == 1)
-                        ch.equipped.core = ch.inventory.next_core(ch.equipped.core, dir);
-                    else
-                        ch.equipped.hull = ch.inventory.next_hull(ch.equipped.hull, dir);
-                }
-                break;
-            }
-
-            // ---- Log archive input --------------------------------------
-            if (log_archive_open_) {
-                if (in.key_pressed[static_cast<int>(platform::Key::Escape)]) {
-                    log_archive_open_ = false;
-                    break;
-                }
-                if (in.key_pressed[static_cast<int>(platform::Key::Up)])
-                    archive_cursor_ = (archive_cursor_ + game::LOG_COUNT - 1) % game::LOG_COUNT;
-                if (in.key_pressed[static_cast<int>(platform::Key::Down)])
-                    archive_cursor_ = (archive_cursor_ + 1) % game::LOG_COUNT;
-                break;
-            }
-
-            // ---- Quest log input ----------------------------------------
-            if (quest_log_open_) {
-                if (in.key_pressed[static_cast<int>(platform::Key::Escape)]) {
-                    quest_log_open_ = false;
-                }
-                break;
-            }
-
-            // ---- Normal gameplay ----------------------------------------
-            world_.step(dt, in);
-
-            const int trig = world_.pending_log_trigger();
-            if (trig >= 0) {
-                world_.clear_pending_log_trigger();
-                if (trig < game::LOG_COUNT && !logs_.has_seen(trig)) {
-                    logs_.begin(trig);
-                    logs_.mark_seen(trig);
-                    check_quests();
-                }
-            }
-
-            const int  room_now = world_.room_index();
-            const bool warden_now = world_.warden_active();
-            const int  display_idx = warden_now ? game::ROOM_COUNT : room_now;
-            if (display_idx != last_room_shown_ || warden_now != last_warden_state_) {
-                room_intro_timer_ = 0.0f;
-                last_room_shown_ = display_idx;
-                last_warden_state_ = warden_now;
-            }
-            if (room_intro_timer_ >= 0.0f) {
-                room_intro_timer_ += dt;
-                if (room_intro_timer_ >= ROOM_INTRO_TOTAL) room_intro_timer_ = -1.0f;
-            }
-
-            if (world_.player_dead()) {
-                screen_ = game::Screen::GameOver;
-            } else if (world_.warden_defeated()) {
-                screen_ = game::Screen::Victory;
-                victory_time_ = 0.0f;
-            }
-            break;
         }
-        case game::Screen::GameOver: {
-            if (any_pressed) {
-                world_.reset();
-                logs_   = game::LogState{};
-                quests_ = game::QuestState{};
-                screen_ = game::Screen::Playing;
-                last_room_shown_      = -1;
-                last_warden_state_    = false;
-                room_intro_timer_     = -1.0f;
+
+        if (in.key_pressed[static_cast<int>(platform::Key::K)]) {
+            skill_tree_open_ = !skill_tree_open_;
+            if (skill_tree_open_) {
+                character_sheet_open_ = false;
+                equipment_panel_open_ = false;
+                log_archive_open_     = false;
+                quest_log_open_       = false;
+                world_map_open_       = false;
+            }
+        }
+
+        if (in.key_pressed[static_cast<int>(platform::Key::I)]) {
+            equipment_panel_open_ = !equipment_panel_open_;
+            if (equipment_panel_open_) {
+                character_sheet_open_ = false;
+                skill_tree_open_      = false;
+                log_archive_open_     = false;
+                quest_log_open_       = false;
+                world_map_open_       = false;
+            }
+        }
+
+        if (in.key_pressed[static_cast<int>(platform::Key::L)]) {
+            log_archive_open_ = !log_archive_open_;
+            if (log_archive_open_) {
+                character_sheet_open_ = false;
+                skill_tree_open_      = false;
+                equipment_panel_open_ = false;
+                quest_log_open_       = false;
+                world_map_open_       = false;
+            }
+        }
+
+        if (in.key_pressed[static_cast<int>(platform::Key::J)]) {
+            quest_log_open_ = !quest_log_open_;
+            if (quest_log_open_) {
+                character_sheet_open_ = false;
+                skill_tree_open_      = false;
+                equipment_panel_open_ = false;
+                log_archive_open_     = false;
+                world_map_open_       = false;
+            }
+        }
+
+        if (in.key_pressed[static_cast<int>(platform::Key::M)]) {
+            world_map_open_ = !world_map_open_;
+            if (world_map_open_) {
                 character_sheet_open_ = false;
                 skill_tree_open_      = false;
                 equipment_panel_open_ = false;
                 log_archive_open_     = false;
                 quest_log_open_       = false;
+                map_cursor_           = world_.room_index();
             }
+        }
+
+        const bool any_panel =
+            character_sheet_open_ || skill_tree_open_ ||
+            equipment_panel_open_ || log_archive_open_ ||
+            quest_log_open_       || world_map_open_;
+
+        if (any_panel) {
+            if (in.key_pressed[static_cast<int>(platform::Key::Escape)]) {
+                character_sheet_open_ = false;
+                skill_tree_open_      = false;
+                equipment_panel_open_ = false;
+                log_archive_open_     = false;
+                quest_log_open_       = false;
+                world_map_open_       = false;
+            }
+
+            if (world_map_open_) {
+                if (in.key_pressed[static_cast<int>(platform::Key::Left)]) {
+                    if (map_cursor_ > 0) --map_cursor_;
+                }
+                if (in.key_pressed[static_cast<int>(platform::Key::Right)]) {
+                    if (map_cursor_ < game::ROOM_COUNT) ++map_cursor_;
+                }
+                if (in.key_pressed[static_cast<int>(platform::Key::Enter)]) {
+                    if (map_cursor_ < game::ROOM_COUNT &&
+                        world_.is_room_cleared(map_cursor_)) {
+                        world_.travel_to_room(map_cursor_);
+                        world_map_open_ = false;
+                    }
+                }
+            }
+
             break;
         }
-        case game::Screen::Victory: {
-            victory_time_ += dt;
-            if (any_pressed && victory_time_ > 2.0f) {
-                world_.reset();
-                logs_   = game::LogState{};
-                quests_ = game::QuestState{};
-                screen_ = game::Screen::Title;
-                title_time_ = 0.0f;
-            }
+
+        if (world_.pending_log_trigger() >= 0) {
+            logs_.begin(world_.pending_log_trigger());
+            world_.clear_pending_log_trigger();
+        }
+
+        world_.step(dt, in);
+        check_quests();
+
+        if (world_.player_dead()) {
+            screen_ = game::Screen::GameOver;
             break;
         }
+        if (world_.warden_defeated()) {
+            screen_ = game::Screen::Victory;
+            victory_time_ = 0.0f;
+            break;
+        }
+
+        if (world_.room_index() != last_room_shown_ ||
+            world_.warden_active() != last_warden_state_) {
+            last_room_shown_   = world_.room_index();
+            last_warden_state_ = world_.warden_active();
+            room_intro_timer_  = ROOM_INTRO_TOTAL;
+        }
+
+        if (room_intro_timer_ > 0.0f) {
+            room_intro_timer_ -= dt;
+            if (room_intro_timer_ < 0.0f) room_intro_timer_ = 0.0f;
+        }
+        break;
+    }
+
+    case game::Screen::GameOver: {
+        if (any_pressed) {
+            screen_ = game::Screen::Title;
+            title_time_ = 0.0f;
+        }
+        break;
+    }
+
+    case game::Screen::Victory: {
+        victory_time_ += dt;
+        if (any_pressed && victory_time_ > 1.0f) {
+            screen_ = game::Screen::Title;
+            title_time_ = 0.0f;
+        }
+        break;
+    }
+
+    default:
+        break;
     }
 }
 
 void App::render() {
-    renderer_.begin_frame(platform::window_width(),
-                          platform::window_height());
+    renderer_.begin_frame(platform::window_width(), platform::window_height());
+
     switch (screen_) {
-        case game::Screen::Intro:    draw_intro(renderer_);      break;
-        case game::Screen::Title:    draw_title(renderer_);      break;
-        case game::Screen::Playing:
-            world_.draw(renderer_);
-            if (logs_.playing())             draw_log_overlay(renderer_);
-            else if (character_sheet_open_)  draw_character_sheet(renderer_);
-            else if (skill_tree_open_)       draw_skill_tree(renderer_);
-            else if (equipment_panel_open_)  draw_equipment_panel(renderer_);
-            else if (log_archive_open_)      draw_log_archive(renderer_);
-            else if (quest_log_open_)        draw_quest_log(renderer_);
-            else                              draw_room_intro(renderer_);
-            break;
-        case game::Screen::GameOver: draw_game_over(renderer_);  break;
-        case game::Screen::Victory:  draw_victory(renderer_);    break;
+    case game::Screen::Intro:
+        draw_intro(renderer_);
+        break;
+    case game::Screen::Title:
+        draw_title(renderer_);
+        break;
+    case game::Screen::Playing:
+        world_.draw(renderer_);
+        if (character_sheet_open_) draw_character_sheet(renderer_);
+        if (skill_tree_open_)      draw_skill_tree(renderer_);
+        if (equipment_panel_open_) draw_equipment_panel(renderer_);
+        if (log_archive_open_)     draw_log_archive(renderer_);
+        if (quest_log_open_)       draw_quest_log(renderer_);
+        if (world_map_open_)       draw_world_map(renderer_);
+        if (logs_.playing())       draw_log_overlay(renderer_);
+        if (room_intro_timer_ > 0.0f) draw_room_intro(renderer_);
+        break;
+    case game::Screen::GameOver:
+        draw_game_over(renderer_);
+        break;
+    case game::Screen::Victory:
+        draw_victory(renderer_);
+        break;
     }
+
     renderer_.end_frame();
 }
 
-static void draw_twinkle_stars(render::Renderer& rr, f32 t, Color base, u8 max_a) {
+void App::draw_title(render::Renderer& r) const {
+    r.set_layer(render::Renderer::Layer::Alpha);
+    r.draw_quad({0,0}, {VIRTUAL_W,0}, {VIRTUAL_W,VIRTUAL_H}, {0,VIRTUAL_H}, rgba(8,8,16,255));
+
     for (int i = 0; i < STAR_COUNT; ++i) {
-        const f32 tw = 0.55f + 0.45f * std::sin(t * 2.1f + f32(i) * 1.73f);
-        const f32 a = f32(max_a) * tw;
-        rr.draw_circle({ STARS[i].x, STARS[i].y },
-                       STARS[i].r * (0.8f + 0.4f * tw),
-                       with_alpha(base, u8(clamp(a, 0.0f, 255.0f))), 6);
+        const f32 tw = 0.6f + 0.4f * std::sin(platform::time_seconds() * 1.5f + f32(i));
+        r.draw_circle({STARS[i].x, STARS[i].y}, STARS[i].r,
+                      with_alpha(COLOR_CORE_INNER, u8(120.0f * tw)), 8);
+    }
+
+    const f32 pulse = 0.5f + 0.5f * std::sin(platform::time_seconds() * 2.0f);
+    r.draw_text_centered({VIRTUAL_W*0.5f, VIRTUAL_H*0.32f},
+                         "INCIDENCE", 12.0f, COLOR_CORE_INNER);
+    r.draw_text_centered({VIRTUAL_W*0.5f, VIRTUAL_H*0.42f},
+                         "REFLECT OR DIE", 3.5f,
+                         with_alpha(COLOR_FACET_EDGE, u8(180 + 60 * pulse)));
+
+    r.set_layer(render::Renderer::Layer::Additive);
+    r.draw_circle({VIRTUAL_W*0.5f, VIRTUAL_H*0.32f}, 400.0f,
+                  with_alpha(COLOR_CORE_EDGE, 20), 48);
+    r.set_layer(render::Renderer::Layer::Alpha);
+
+    if (title_time_ > 0.4f) {
+        r.draw_text_centered({VIRTUAL_W*0.5f, VIRTUAL_H*0.66f},
+                             "PRESS ANY KEY TO BEGIN", 3.0f,
+                             with_alpha(COLOR_CORE_EDGE, u8(pulse * 255.0f)));
+    }
+
+    r.draw_text_centered({VIRTUAL_W*0.5f, VIRTUAL_H - 50.0f},
+                         "TAB: STATS   K: SKILLS   I: GEAR   L: LOGS   J: QUESTS   M: MAP",
+                         2.2f, with_alpha(COLOR_FACET_EDGE, 180));
+}
+
+void App::draw_game_over(render::Renderer& r) const {
+    r.set_layer(render::Renderer::Layer::Alpha);
+    r.draw_quad({0,0}, {VIRTUAL_W,0}, {VIRTUAL_W,VIRTUAL_H}, {0,VIRTUAL_H}, rgba(40,0,0,200));
+    r.draw_text_centered({VIRTUAL_W*0.5f, VIRTUAL_H*0.42f},
+                         "DEFLECTOR OFFLINE", 8.0f, COLOR_ENEMY_CORE);
+    r.draw_text_centered({VIRTUAL_W*0.5f, VIRTUAL_H*0.55f},
+                         "PRESS ANY KEY", 3.0f, COLOR_ENEMY_EDGE);
+}
+
+void App::draw_victory(render::Renderer& r) const {
+    r.set_layer(render::Renderer::Layer::Alpha);
+    const f32 t = clamp(victory_time_ / 2.0f, 0.0f, 1.0f);
+    r.draw_quad({0,0}, {VIRTUAL_W,0}, {VIRTUAL_W,VIRTUAL_H}, {0,VIRTUAL_H},
+                rgba(10, 20, 10, u8(180 + 75 * t)));
+    r.draw_text_centered({VIRTUAL_W*0.5f, VIRTUAL_H*0.38f},
+                         "FOLD PRESERVED", 10.0f,
+                         with_alpha(COLOR_CORE_INNER, u8(t * 255.0f)));
+    r.draw_text_centered({VIRTUAL_W*0.5f, VIRTUAL_H*0.50f},
+                         "KITE-9 ENDURES", 4.0f,
+                         with_alpha(COLOR_FACET_EDGE, u8(t * 220.0f)));
+    if (victory_time_ > 1.0f) {
+        const f32 pulse = 0.5f + 0.5f * std::sin(platform::time_seconds() * 3.0f);
+        r.draw_text_centered({VIRTUAL_W*0.5f, VIRTUAL_H*0.62f},
+                             "PRESS ANY KEY", 3.0f,
+                             with_alpha(COLOR_CORE_EDGE, u8(pulse * 255.0f)));
     }
 }
 
-void App::draw_title(render::Renderer& rr) const {
-    rr.set_layer(render::Renderer::Layer::Alpha);
-
-    rr.draw_quad({ 0, 0 }, { VIRTUAL_W, 0 }, { VIRTUAL_W, VIRTUAL_H }, { 0, VIRTUAL_H },
-                 with_alpha(COLOR_CORE_FILL, 200));
-    draw_twinkle_stars(rr, title_time_, COLOR_CORE_INNER, 110);
-
-    const f32 cx = VIRTUAL_W * 0.5f;
-    const f32 cy = VIRTUAL_H * 0.30f;
-    const f32 station_y = VIRTUAL_H * 0.42f;
-    const f32 R_st = 340.0f;
-
-    rr.draw_ring({ cx, station_y }, R_st - 3.0f, R_st, with_alpha(COLOR_CORE_EDGE, 55), 128);
-    rr.draw_ring({ cx, station_y }, R_st - 42.0f, R_st - 34.0f, with_alpha(COLOR_CORE_EDGE, 40), 128);
-    for (int a = 0; a < 4; ++a) {
-        const f32 a0 = TAU * f32(a) / 4.0f + title_time_ * 0.15f;
-        rr.draw_arc_ring({ cx, station_y }, R_st - 42.0f, R_st, a0, a0 + 0.55f,
-                         with_alpha(COLOR_CORE_INNER, 90), 20);
-    }
-    for (int i = 0; i < 8; ++i) {
-        const f32 a = TAU * f32(i) / 8.0f + title_time_ * 0.05f;
-        rr.draw_line({ cx + std::cos(a) * 60.0f, station_y + std::sin(a) * 60.0f },
-                     { cx + std::cos(a) * (R_st - 42.0f), station_y + std::sin(a) * (R_st - 42.0f) },
-                     1.0f, with_alpha(COLOR_CORE_EDGE, 40));
-    }
-    rr.draw_circle({ cx, station_y }, 24.0f, with_alpha(COLOR_CORE_FILL, 240), 20);
-    rr.draw_ring({ cx, station_y }, 24.0f, 28.0f, with_alpha(COLOR_CORE_EDGE, 160), 24);
-
-    for (int i = 0; i < 5; ++i) {
-        const f32 t0 = title_time_ * 0.1f + f32(i) * 1.3f;
-        const f32 dx = cx + std::cos(t0) * (500.0f + f32(i) * 30.0f);
-        const f32 dy = station_y + std::sin(t0) * (220.0f + f32(i) * 15.0f);
-        rr.draw_triangle({ dx, dy - 5.0f }, { dx - 3.5f, dy + 3.0f }, { dx + 3.5f, dy + 3.0f },
-                         with_alpha(COLOR_CORE_EDGE, 180));
-    }
-
-    const f32 pulse = 0.5f + 0.5f * std::sin(title_time_ * 1.6f);
-
-    rr.draw_quad({ cx - 500.0f, cy - 30.0f }, { cx + 500.0f, cy - 30.0f },
-                 { cx + 500.0f, cy + 160.0f }, { cx - 500.0f, cy + 160.0f },
-                 with_alpha(COLOR_VOID, 180));
-
-    rr.draw_text_centered({ cx, cy }, "INCIDENCE", 10.0f, COLOR_CORE_EDGE);
-    rr.draw_text_centered({ cx, cy + 90.0f }, "A MIRROR DEFLECTOR", 2.2f, with_alpha(COLOR_FACET_EDGE, 200));
-    rr.draw_text_centered({ cx, cy + 118.0f }, "UNIT KITE-9", 2.2f, with_alpha(COLOR_FACET_EDGE, 200));
-
-    const Vec2 drone_pos { cx, VIRTUAL_H * 0.66f };
-    rr.draw_circle(drone_pos, 14.0f, COLOR_CORE_FILL, 20);
-    rr.draw_ring(drone_pos, 14.0f, 17.0f, COLOR_CORE_EDGE, 24);
-    const f32 span = 2.44f;
-    const f32 heading = -HALF_PI;
-    for (int i = 0; i < 5; ++i) {
-        const f32 step = span / 5.0f;
-        const f32 a0 = heading - span * 0.5f + f32(i)     * step;
-        const f32 a1 = heading - span * 0.5f + f32(i + 1) * step;
-        const Vec2 pin0 = drone_pos + Vec2::from_angle(a0) * 50.0f;
-        const Vec2 pin1 = drone_pos + Vec2::from_angle(a1) * 50.0f;
-        const Vec2 pout0= drone_pos + Vec2::from_angle(a0) * 60.0f;
-        const Vec2 pout1= drone_pos + Vec2::from_angle(a1) * 60.0f;
-        rr.draw_quad(pin0, pin1, pout1, pout0, COLOR_FACET_FILL);
-        rr.draw_line(pout0, pout1, 2.0f, COLOR_FACET_EDGE);
-    }
-
-    rr.draw_text_centered({ cx, VIRTUAL_H * 0.78f },
-                          "REFLECT. REDIRECT. PRESERVE.",
-                          2.0f, with_alpha(COLOR_FACET_EDGE, 180));
-
-    const f32 ring_y = VIRTUAL_H * 0.88f;
-    const f32 ring_r = 26.0f + 5.0f * pulse;
-    rr.draw_ring({ cx, ring_y }, ring_r - 3.0f, ring_r + 3.0f, with_alpha(COLOR_CORE_INNER, 200), 32);
-    rr.draw_text_centered({ cx, ring_y + 45.0f }, "PRESS ANY KEY", 2.4f, COLOR_CORE_INNER);
-
-    rr.set_layer(render::Renderer::Layer::Additive);
-    rr.draw_circle({ cx, ring_y }, 80.0f, with_alpha(COLOR_CORE_EDGE, u8(28 * pulse)), 24);
-    rr.draw_circle(drone_pos, 90.0f, with_alpha(COLOR_CORE_EDGE, 24), 24);
-    rr.draw_circle({ cx, station_y }, 400.0f, with_alpha(COLOR_CORE_EDGE, 10), 64);
-}
-
-void App::draw_room_intro(render::Renderer& rr) const {
-    if (room_intro_timer_ < 0.0f) return;
-
-    const f32 t = room_intro_timer_;
+void App::draw_room_intro(render::Renderer& r) const {
+    const f32 elapsed = ROOM_INTRO_TOTAL - room_intro_timer_;
     f32 alpha = 1.0f;
-    if (t < ROOM_INTRO_FADE_IN) {
-        alpha = t / ROOM_INTRO_FADE_IN;
-    } else if (t > ROOM_INTRO_FADE_IN + ROOM_INTRO_HOLD) {
-        alpha = 1.0f - ((t - (ROOM_INTRO_FADE_IN + ROOM_INTRO_HOLD)) / ROOM_INTRO_FADE_OUT);
+    if (elapsed < ROOM_INTRO_FADE_IN) {
+        alpha = elapsed / ROOM_INTRO_FADE_IN;
+    } else if (elapsed > ROOM_INTRO_FADE_IN + ROOM_INTRO_HOLD) {
+        const f32 out = elapsed - ROOM_INTRO_FADE_IN - ROOM_INTRO_HOLD;
+        alpha = 1.0f - out / ROOM_INTRO_FADE_OUT;
     }
     alpha = clamp(alpha, 0.0f, 1.0f);
-    if (alpha < 0.01f) return;
 
-    int idx = last_room_shown_;
-    if (idx < 0 || idx > game::ROOM_COUNT) return;
+    const bool boss = world_.warden_active();
+    const int idx = boss ? 9 : world_.room_index();
+    if (idx < 0 || idx > 9) return;
 
-    const char* name  = ROOM_NAME[idx];
-    const char* blurb = ROOM_BLURB[idx];
-    const Color arc_color = room_arc_color(idx);
+    const Color accent = boss ? COLOR_ENEMY_CORE : room_arc_color(idx);
 
-    const f32 cx = VIRTUAL_W * 0.5f;
-    const f32 band_y = 100.0f;
-    const f32 w = 1200.0f;
-    const f32 h = 76.0f;
+    r.set_layer(render::Renderer::Layer::Alpha);
+    r.draw_quad({0, 0}, {VIRTUAL_W, 0}, {VIRTUAL_W, 180.0f}, {0, 180.0f},
+                rgba(0, 0, 0, u8(alpha * 180.0f)));
 
-    rr.set_layer(render::Renderer::Layer::Alpha);
-    rr.draw_quad({ cx - w * 0.5f, band_y - h * 0.5f },
-                 { cx + w * 0.5f, band_y - h * 0.5f },
-                 { cx + w * 0.5f, band_y + h * 0.5f },
-                 { cx - w * 0.5f, band_y + h * 0.5f },
-                 with_alpha(COLOR_VOID, u8(alpha * 220.0f)));
-    rr.draw_line({ cx - w * 0.5f, band_y - h * 0.5f - 4.0f },
-                 { cx + w * 0.5f, band_y - h * 0.5f - 4.0f },
-                 2.0f, with_alpha(arc_color, u8(alpha * 200.0f)));
-    rr.draw_line({ cx - w * 0.5f, band_y + h * 0.5f + 4.0f },
-                 { cx + w * 0.5f, band_y + h * 0.5f + 4.0f },
-                 1.0f, with_alpha(arc_color, u8(alpha * 140.0f)));
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "ROOM %d", idx);
+    r.draw_text({60.0f, 50.0f}, buf, 3.0f,
+                with_alpha(accent, u8(alpha * 200.0f)));
+    r.draw_text({60.0f, 95.0f}, ROOM_NAME[idx], 6.0f,
+                with_alpha(COLOR_CORE_INNER, u8(alpha * 255.0f)));
+    r.draw_text({60.0f, 145.0f}, ROOM_BLURB[idx], 2.0f,
+                with_alpha(COLOR_FACET_EDGE, u8(alpha * 200.0f)));
 
-    const f32 badge_x = cx - w * 0.5f + 44.0f;
-    const f32 badge_y = band_y;
-    {
-        Vec2 prev{};
-        for (int k = 0; k <= 6; ++k) {
-            const f32 a = TAU * f32(k) / 6.0f - PI * 0.5f;
-            const Vec2 p { badge_x + std::cos(a) * 24.0f, badge_y + std::sin(a) * 24.0f };
-            if (k > 0) rr.draw_line(prev, p, 2.0f, with_alpha(arc_color, u8(alpha * 220.0f)));
-            prev = p;
-        }
-        rr.draw_circle({ badge_x, badge_y }, 8.0f, with_alpha(arc_color, u8(alpha * 200.0f)), 16);
-        rr.draw_circle({ badge_x, badge_y }, 3.0f, with_alpha(COLOR_VOID, u8(alpha * 255.0f)), 10);
-    }
-
-    const f32 name_px = 3.0f;
-    const f32 name_x = badge_x + 40.0f;
-    rr.draw_text({ name_x, band_y - 26.0f }, name, name_px,
-                 with_alpha(arc_color, u8(alpha * 255.0f)));
-
-    const char* arc_label = "ARC I";
-    switch (idx) {
-        case 3: case 4: arc_label = "ARC II";  break;
-        case 5:         arc_label = "ARC III"; break;
-        case 6: case 7: arc_label = "ARC IV";  break;
-        case 8: case 9: arc_label = "ARC V";   break;
-        default:        arc_label = "ARC I";   break;
-    }
-    const f32 name_w = rr.text_width(name, name_px);
-    rr.draw_text({ name_x + name_w + 20.0f, band_y - 22.0f }, arc_label, 1.8f,
-                 with_alpha(COLOR_FACET_EDGE, u8(alpha * 180.0f)));
-
-    const f32 blurb_px = 1.8f;
-    const f32 blurb_max_w = (cx + w * 0.5f) - name_x - 20.0f;
-    const f32 blurb_w = rr.text_width(blurb, blurb_px);
-    if (blurb_w < blurb_max_w) {
-        rr.draw_text({ name_x, band_y + 8.0f }, blurb, blurb_px,
-                     with_alpha(COLOR_FACET_EDGE, u8(alpha * 230.0f)));
-    } else {
-        char buf[256];
-        int n = 0;
-        while (blurb[n] && n < 250) { buf[n] = blurb[n]; ++n; }
-        buf[n] = '\0';
-        int cut = n;
-        while (cut > 8 && rr.text_width(buf, blurb_px) > blurb_max_w - 30.0f) buf[--cut] = '\0';
-        if (cut > 6) { buf[cut-3]='.'; buf[cut-2]='.'; buf[cut-1]='.'; buf[cut]='\0'; }
-        rr.draw_text({ name_x, band_y + 8.0f }, buf, blurb_px,
-                     with_alpha(COLOR_FACET_EDGE, u8(alpha * 230.0f)));
-    }
-
-    rr.set_layer(render::Renderer::Layer::Additive);
-    rr.draw_circle({ cx, band_y }, 220.0f, with_alpha(arc_color, u8(alpha * 16.0f)), 40);
-    rr.draw_circle({ badge_x, badge_y }, 60.0f, with_alpha(arc_color, u8(alpha * 60.0f)), 24);
-}
-
-void App::draw_game_over(render::Renderer& rr) const {
-    rr.set_layer(render::Renderer::Layer::Alpha);
-    rr.draw_quad({ 0, 0 }, { VIRTUAL_W, 0 }, { VIRTUAL_W, VIRTUAL_H }, { 0, VIRTUAL_H },
-                 with_alpha(COLOR_VOID, 230));
-    draw_twinkle_stars(rr, platform::time_seconds(), COLOR_ENEMY_EDGE, 70);
-
-    const f32 t  = platform::time_seconds();
-    const f32 cx = VIRTUAL_W * 0.5f;
-    const f32 shake = std::sin(t * 8.0f) * 3.0f;
-    const f32 station_y = VIRTUAL_H * 0.28f + shake;
-    const f32 R_st = 300.0f;
-
-    for (int i = 0; i < 12; ++i) {
-        const f32 a0 = TAU * f32(i) / 12.0f + t * 0.08f;
-        const f32 drift = f32(i % 3) * 25.0f;
-        rr.draw_arc_ring({ cx, station_y }, R_st - 3.0f + drift, R_st + drift,
-                         a0, a0 + 0.35f, with_alpha(COLOR_ENEMY_EDGE, 130), 10);
-    }
-    const f32 cf = 0.4f + 0.3f * std::sin(t * 1.5f);
-    rr.draw_circle({ cx, station_y }, 40.0f * cf, with_alpha(COLOR_ENEMY_CORE, u8(cf * 180.0f)), 24);
-    rr.draw_circle({ cx, station_y }, 22.0f, with_alpha(COLOR_ENEMY_FILL, 240), 20);
-
-    const f32 pp = std::fmod(t, 2.2f) / 2.2f;
-    rr.draw_ring({ cx, VIRTUAL_H * 0.5f }, 80.0f + pp * 800.0f - 4.0f, 80.0f + pp * 800.0f + 4.0f,
-                 with_alpha(COLOR_ENEMY_CORE, u8((1.0f - pp) * 100.0f)), 64);
-
-    const f32 cy = VIRTUAL_H * 0.52f;
-    rr.draw_quad({ cx - 400.0f, cy - 40.0f }, { cx + 400.0f, cy - 40.0f },
-                 { cx + 400.0f, cy + 180.0f }, { cx - 400.0f, cy + 180.0f },
-                 with_alpha(COLOR_VOID, 200));
-
-    rr.draw_text_centered({ cx, cy }, "GAME OVER", 9.0f, COLOR_ENEMY_EDGE);
-    rr.draw_text_centered({ cx, cy + 110.0f }, "KITE-9 DOWN", 2.4f, with_alpha(COLOR_ENEMY_CORE, 220));
-    rr.draw_text_centered({ cx, cy + 150.0f }, "REFLECT. REDIRECT. PRESERVE.", 1.8f, with_alpha(COLOR_ENEMY_EDGE, 160));
-
-    const f32 pulse = 0.5f + 0.5f * std::sin(t * 4.0f);
-    const f32 ring_y = VIRTUAL_H * 0.82f;
-    const f32 ring_r = 24.0f + 5.0f * pulse;
-    rr.draw_ring({ cx, ring_y }, ring_r - 3.0f, ring_r + 3.0f,
-                 with_alpha(COLOR_ENEMY_CORE, u8(140 + 100 * pulse)), 32);
-    rr.draw_text_centered({ cx, ring_y + 45.0f }, "PRESS ANY KEY", 2.2f, with_alpha(COLOR_ENEMY_CORE, 220));
-
-    rr.set_layer(render::Renderer::Layer::Additive);
-    rr.draw_circle({ cx, ring_y }, 70.0f, with_alpha(COLOR_ENEMY_CORE, u8(35 * pulse)), 24);
-    rr.draw_circle({ cx, station_y }, 320.0f, with_alpha(COLOR_ENEMY_FILL, 20), 64);
-}
-
-void App::draw_victory(render::Renderer& rr) const {
-    rr.set_layer(render::Renderer::Layer::Alpha);
-    rr.draw_quad({ 0, 0 }, { VIRTUAL_W, 0 }, { VIRTUAL_W, VIRTUAL_H }, { 0, VIRTUAL_H },
-                 with_alpha(COLOR_VOID, 230));
-    draw_twinkle_stars(rr, victory_time_, COLOR_CORE_INNER, 130);
-
-    const f32 cx = VIRTUAL_W * 0.5f;
-    const f32 t  = victory_time_;
-    const f32 station_y = VIRTUAL_H * 0.30f;
-    const f32 R_st = 320.0f;
-
-    rr.draw_ring({ cx, station_y }, R_st - 3.0f, R_st, with_alpha(COLOR_CORE_EDGE, 200), 128);
-    rr.draw_ring({ cx, station_y }, R_st - 42.0f, R_st - 36.0f, with_alpha(COLOR_CORE_INNER, 160), 128);
-    for (int a = 0; a < 6; ++a) {
-        const f32 a0 = TAU * f32(a) / 6.0f + victory_time_ * 0.25f;
-        rr.draw_arc_ring({ cx, station_y }, R_st - 42.0f, R_st, a0, a0 + 0.35f, COLOR_CORE_INNER, 16);
-    }
-    for (int i = 0; i < 12; ++i) {
-        const f32 a = TAU * f32(i) / 12.0f + victory_time_ * 0.03f;
-        rr.draw_line({ cx + std::cos(a) * 80.0f, station_y + std::sin(a) * 80.0f },
-                     { cx + std::cos(a) * (R_st - 42.0f), station_y + std::sin(a) * (R_st - 42.0f) },
-                     1.0f, with_alpha(COLOR_CORE_EDGE, 60));
-    }
-    rr.draw_circle({ cx, station_y }, 34.0f, with_alpha(COLOR_CORE_FILL, 240), 24);
-    rr.draw_ring({ cx, station_y }, 34.0f, 40.0f, COLOR_CORE_EDGE, 32);
-    rr.draw_circle({ cx, station_y }, 12.0f, COLOR_CORE_INNER, 18);
-
-    for (int i = 0; i < 40; ++i) {
-        const f32 fi = f32(i);
-        const f32 h = std::fmod(std::fabs(std::sin(fi * 12.9898f) * 43758.5453f), 1.0f);
-        const f32 sx = h * VIRTUAL_W;
-        const f32 period = 4.0f + std::fmod(fi * 0.7f, 2.5f);
-        const f32 phase = std::fmod(victory_time_ / period + fi * 0.13f, 1.0f);
-        const f32 sy = VIRTUAL_H - phase * VIRTUAL_H;
-        const f32 sparkle = 0.5f + 0.5f * std::sin(fi + victory_time_ * 3.0f);
-        const f32 a = (1.0f - phase) * sparkle * 0.7f;
-        rr.draw_circle({ sx, sy }, 1.8f, with_alpha(COLOR_CORE_INNER, u8(clamp(a, 0.0f, 1.0f) * 200.0f)), 6);
-    }
-
-    const f32 cy = VIRTUAL_H * 0.52f;
-    rr.draw_quad({ cx - 500.0f, cy - 40.0f }, { cx + 500.0f, cy - 40.0f },
-                 { cx + 500.0f, cy + 100.0f }, { cx - 500.0f, cy + 100.0f },
-                 with_alpha(COLOR_VOID, 200));
-    rr.draw_text_centered({ cx, cy }, "VICTORY", 9.0f, COLOR_CORE_EDGE);
-    rr.draw_text_centered({ cx, cy + 110.0f }, "THEOREM STABILIZED", 2.6f, with_alpha(COLOR_CORE_INNER, 220));
-    rr.draw_text_centered({ cx, cy + 145.0f }, "THE RING WILL HOLD", 2.6f, with_alpha(COLOR_CORE_INNER, 220));
-
-    const int dots = game::ROOM_COUNT + 1;
-    const f32 dot_y = VIRTUAL_H * 0.68f;
-    for (int i = 0; i < dots; ++i) {
-        const f32 x = cx + (f32(i) - f32(dots - 1) * 0.5f) * 28.0f;
-        const f32 offset = std::sin(t * 2.0f + f32(i) * 0.4f) * 6.0f;
-        rr.draw_circle({ x, dot_y + offset }, 8.0f, COLOR_CORE_INNER, 14);
-    }
-
-    if (t > 2.0f) {
-        const char* rec[] = {
-            "> HALCYON STATION - FINAL STATE",
-            "> RING INTEGRITY: STABLE",
-            "> CREW ONBOARD: 0",
-            "> OPERATIONAL DRONES: 1",
-            "> THEOREM STATUS: COHERENT",
-            "> LAST TRANSMISSION: IS THIS INTEGRITY?",
-            "> REPLY: NONE",
-        };
-        const f32 rec_x  = cx - 340.0f;
-        const f32 rec_y0 = VIRTUAL_H * 0.76f;
-        for (int i = 0; i < 7; ++i) {
-            const f32 lr = clamp((t - 2.0f - f32(i) * 0.2f) / 0.4f, 0.0f, 1.0f);
-            const u8 la = u8(lr * 200.0f);
-            if (la == 0) continue;
-            rr.draw_text({ rec_x, rec_y0 + f32(i) * 22.0f }, rec[i], 1.9f, with_alpha(COLOR_CORE_EDGE, la));
-        }
-    }
-
-    if (t > 3.5f) {
-        const f32 pulse = 0.5f + 0.5f * std::sin(t * 4.0f);
-        const f32 ring_y = VIRTUAL_H * 0.94f;
-        const f32 ring_r = 20.0f + 4.0f * pulse;
-        rr.draw_ring({ cx, ring_y }, ring_r - 3.0f, ring_r + 3.0f,
-                     with_alpha(COLOR_CORE_EDGE, u8(140 + 100 * pulse)), 32);
-        rr.draw_text_centered({ cx, ring_y + 40.0f }, "PRESS ANY KEY", 2.0f, with_alpha(COLOR_CORE_INNER, 220));
-    }
-
-    rr.set_layer(render::Renderer::Layer::Additive);
-    rr.draw_circle({ cx, station_y }, 480.0f, with_alpha(COLOR_CORE_EDGE, 22), 64);
-    rr.draw_circle({ cx, VIRTUAL_H * 0.5f }, 300.0f, with_alpha(COLOR_CORE_INNER, 8), 40);
-}
-
-void App::shutdown() {
-    audio::shutdown();
-    renderer_.shutdown();
-    std::fprintf(stderr, "[incidence] shutdown after %llu frames\n",
-                 static_cast<unsigned long long>(frame_count_));
-    std::fflush(stderr);
+    r.set_layer(render::Renderer::Layer::Additive);
+    r.draw_line({0.0f, 180.0f}, {VIRTUAL_W, 180.0f}, 2.0f,
+                with_alpha(accent, u8(alpha * 160.0f)));
+    r.set_layer(render::Renderer::Layer::Alpha);
 }
 
 } // namespace inc

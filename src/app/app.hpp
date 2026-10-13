@@ -29,19 +29,22 @@ private:
     void step(f32 dt);
     void render();
 
-    void draw_intro(render::Renderer& r) const;
-    void draw_intro_background(render::Renderer& r,
-                               int card_index, f32 card_t) const;
     void draw_title(render::Renderer& r) const;
     void draw_game_over(render::Renderer& r) const;
     void draw_victory(render::Renderer& r) const;
     void draw_room_intro(render::Renderer& r) const;
+
+    void draw_intro(render::Renderer& r) const;
+    void draw_intro_background(render::Renderer& r,
+                               int card_index, f32 card_t) const;
+
     void draw_character_sheet(render::Renderer& r) const;
     void draw_skill_tree(render::Renderer& r) const;
     void draw_equipment_panel(render::Renderer& r) const;
     void draw_log_overlay(render::Renderer& r) const;
     void draw_log_archive(render::Renderer& r) const;
     void draw_quest_log(render::Renderer& r) const;
+    void draw_world_map(render::Renderer& r) const;
 
     void check_quests();
 
@@ -64,11 +67,13 @@ private:
     bool          equipment_panel_open_ = false;
     bool          log_archive_open_     = false;
     bool          quest_log_open_       = false;
+    bool          world_map_open_       = false;
 
     int           skill_cursor_branch_  = 0;
     int           skill_cursor_row_     = 0;
     int           equipment_slot_       = 0;
     int           archive_cursor_       = 0;
+    int           map_cursor_           = 0;
 
     game::LogState    logs_;
     game::QuestState  quests_;

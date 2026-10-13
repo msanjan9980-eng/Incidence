@@ -17,22 +17,9 @@ f32 closest_point_on_segment(Vec2 p, Vec2 a, Vec2 b, Vec2& out_closest) {
 
 namespace {
 
-// ---------------------------------------------------------------------------
-// The campaign. Nine rooms, escalating from a bare arena to a walled maze.
-//
-// Each room teaches exactly one geometric idea and then composes it with the
-// previous ones. Wall placements are kept at least ~70 px from drone_start so
-// the shield never clips into geometry on spawn.
-//
-// Convention: VIRTUAL_W = 1920, VIRTUAL_H = 1080.
-// ---------------------------------------------------------------------------
 const Room ROOMS[ROOM_COUNT] = {
 
-    // =======================================================================
-    // ROOM 0 — ARENA
-    // The tutorial. No walls. Two Lancers up top, one Banker below.
-    // The player learns reflection against an empty box.
-    // =======================================================================
+    // 0: ARENA
     {
         .name        = "ARENA",
         .drone_start = { 960.0f, 540.0f },
@@ -42,12 +29,11 @@ const Room ROOMS[ROOM_COUNT] = {
             { {  960.0f, 860.0f }, EnemyType::Banker },
         },
         .enemy_count = 3,
+        .doors = { { 1, 1 } },
+        .door_count = 1,
     },
 
-    // =======================================================================
-    // ROOM 1 — CROSS
-    // Plus-shaped obstacle. Corners swap roles mid-fight.
-    // =======================================================================
+    // 1: CROSS
     {
         .name        = "CROSS",
         .drone_start = { 960.0f, 900.0f },
@@ -63,12 +49,11 @@ const Room ROOMS[ROOM_COUNT] = {
             { { 1620.0f, 860.0f }, EnemyType::Lancer },
         },
         .enemy_count = 4,
+        .doors = { { 3, 0 }, { 1, 2 } },
+        .door_count = 2,
     },
 
-    // =======================================================================
-    // ROOM 2 — CORRIDOR
-    // Two-wall corridor with a central gap. Leads fire through the gap.
-    // =======================================================================
+    // 2: CORRIDOR
     {
         .name        = "CORRIDOR",
         .drone_start = { 960.0f, 540.0f },
@@ -87,21 +72,19 @@ const Room ROOMS[ROOM_COUNT] = {
             { {  960.0f, 180.0f }, EnemyType::Lead   },
         },
         .enemy_count = 5,
+        .doors = { { 3, 1 }, { 1, 3 } },
+        .door_count = 2,
     },
 
-    // =======================================================================
-    // ROOM 3 — HOURGLASS
-    // Two diagonals form a pinched X in the center. Every shot must thread
-    // the throat of the hourglass or bounce off an arm.
-    // =======================================================================
+    // 3: HOURGLASS
     {
         .name        = "HOURGLASS",
         .drone_start = { 960.0f, 900.0f },
         .walls = {
-            { {  620.0f, 220.0f }, { 1000.0f, 540.0f } },   // top-left diagonal
-            { { 1300.0f, 220.0f }, {  920.0f, 540.0f } },   // top-right diagonal
-            { {  620.0f, 860.0f }, { 1000.0f, 540.0f } },   // bottom-left diagonal
-            { { 1300.0f, 860.0f }, {  920.0f, 540.0f } },   // bottom-right diagonal
+            { {  620.0f, 220.0f }, { 1000.0f, 540.0f } },
+            { { 1300.0f, 220.0f }, {  920.0f, 540.0f } },
+            { {  620.0f, 860.0f }, { 1000.0f, 540.0f } },
+            { { 1300.0f, 860.0f }, {  920.0f, 540.0f } },
         },
         .wall_count = 4,
         .enemies = {
@@ -112,19 +95,17 @@ const Room ROOMS[ROOM_COUNT] = {
             { {  960.0f,  80.0f }, EnemyType::Lead   },
         },
         .enemy_count = 5,
+        .doors = { { 3, 2 }, { 1, 4 } },
+        .door_count = 2,
     },
 
-    // =======================================================================
-    // ROOM 4 — CHOKE
-    // A full-height wall splits the room in two. A single gap in the middle
-    // is the only line of sight. The player must choose which side to clear.
-    // =======================================================================
+    // 4: CHOKE
     {
         .name        = "CHOKE",
         .drone_start = { 960.0f, 540.0f },
         .walls = {
-            { {  960.0f,   40.0f }, {  960.0f, 420.0f } },   // upper wall
-            { {  960.0f,  660.0f }, {  960.0f, 1040.0f } },  // lower wall
+            { {  960.0f,   40.0f }, {  960.0f, 420.0f } },
+            { {  960.0f,  660.0f }, {  960.0f, 1040.0f } },
         },
         .wall_count = 2,
         .enemies = {
@@ -135,21 +116,19 @@ const Room ROOMS[ROOM_COUNT] = {
             { {  960.0f, 120.0f }, EnemyType::Lead   },
         },
         .enemy_count = 5,
+        .doors = { { 3, 3 }, { 1, 5 } },
+        .door_count = 2,
     },
 
-    // =======================================================================
-    // ROOM 5 — SPIRAL
-    // Four wall segments spiral toward the center. Bullets curve inward
-    // with every bounce, and kills require reading a curving path.
-    // =======================================================================
+    // 5: SPIRAL
     {
         .name        = "SPIRAL",
         .drone_start = { 960.0f, 540.0f },
         .walls = {
-            { {  480.0f, 200.0f }, {  960.0f, 200.0f } },   // top
-            { { 1440.0f, 480.0f }, { 1440.0f, 880.0f } },   // right
-            { {  960.0f, 880.0f }, {  480.0f, 880.0f } },   // bottom
-            { {  480.0f, 880.0f }, {  480.0f, 200.0f } },   // left
+            { {  480.0f, 200.0f }, {  960.0f, 200.0f } },
+            { { 1440.0f, 480.0f }, { 1440.0f, 880.0f } },
+            { {  960.0f, 880.0f }, {  480.0f, 880.0f } },
+            { {  480.0f, 880.0f }, {  480.0f, 200.0f } },
         },
         .wall_count = 4,
         .enemies = {
@@ -161,21 +140,19 @@ const Room ROOMS[ROOM_COUNT] = {
             { {  960.0f, 990.0f }, EnemyType::Banker },
         },
         .enemy_count = 6,
+        .doors = { { 3, 4 }, { 1, 6 } },
+        .door_count = 2,
     },
 
-    // =======================================================================
-    // ROOM 6 — PINCH
-    // Two walls angled inward from the top and bottom narrow the playable
-    // space into a waist. Movement is constrained; reflection is everything.
-    // =======================================================================
+    // 6: PINCH
     {
         .name        = "PINCH",
         .drone_start = { 960.0f, 540.0f },
         .walls = {
-            { {  200.0f, 220.0f }, {  760.0f, 480.0f } },   // upper-left
-            { { 1720.0f, 220.0f }, { 1160.0f, 480.0f } },   // upper-right
-            { {  200.0f, 860.0f }, {  760.0f, 600.0f } },   // lower-left
-            { { 1720.0f, 860.0f }, { 1160.0f, 600.0f } },   // lower-right
+            { {  200.0f, 220.0f }, {  760.0f, 480.0f } },
+            { { 1720.0f, 220.0f }, { 1160.0f, 480.0f } },
+            { {  200.0f, 860.0f }, {  760.0f, 600.0f } },
+            { { 1720.0f, 860.0f }, { 1160.0f, 600.0f } },
         },
         .wall_count = 4,
         .enemies = {
@@ -183,16 +160,14 @@ const Room ROOMS[ROOM_COUNT] = {
             { {  960.0f,  980.0f }, EnemyType::Lead   },
             { {  200.0f, 540.0f },  EnemyType::Lancer },
             { { 1720.0f, 540.0f },  EnemyType::Lancer },
-            { {  960.0f, 540.0f - 320.0f }, EnemyType::Banker },
+            { {  960.0f, 220.0f },  EnemyType::Banker },
         },
         .enemy_count = 5,
+        .doors = { { 3, 5 }, { 1, 7 } },
+        .door_count = 2,
     },
 
-    // =======================================================================
-    // ROOM 7 — CROSSFIRE
-    // No walls. Six enemies arranged in a hexagon. Every direction is hot.
-    // The player must rotate constantly; standing still is fatal.
-    // =======================================================================
+    // 7: CROSSFIRE
     {
         .name        = "CROSSFIRE",
         .drone_start = { 960.0f, 540.0f },
@@ -205,22 +180,19 @@ const Room ROOMS[ROOM_COUNT] = {
             { { 1660.0f,  760.0f }, EnemyType::Banker },
         },
         .enemy_count = 6,
+        .doors = { { 3, 6 }, { 1, 8 } },
+        .door_count = 2,
     },
 
-    // =======================================================================
-    // ROOM 8 — THE BOX
-    // A closed square in the dead center. Enemies surround it. Bullets can
-    // only reach the drone by bouncing through the space around the box.
-    // The final room before the Warden.
-    // =======================================================================
+    // 8: THE BOX
     {
         .name        = "THE BOX",
         .drone_start = { 960.0f, 940.0f },
         .walls = {
-            { {  760.0f, 400.0f }, { 1160.0f, 400.0f } },   // top
-            { { 1160.0f, 400.0f }, { 1160.0f, 680.0f } },   // right
-            { { 1160.0f, 680.0f }, {  760.0f, 680.0f } },   // bottom
-            { {  760.0f, 680.0f }, {  760.0f, 400.0f } },   // left
+            { {  760.0f, 400.0f }, { 1160.0f, 400.0f } },
+            { { 1160.0f, 400.0f }, { 1160.0f, 680.0f } },
+            { { 1160.0f, 680.0f }, {  760.0f, 680.0f } },
+            { {  760.0f, 680.0f }, {  760.0f, 400.0f } },
         },
         .wall_count = 4,
         .enemies = {
@@ -233,6 +205,8 @@ const Room ROOMS[ROOM_COUNT] = {
             { { 1520.0f, 540.0f }, EnemyType::Lancer },
         },
         .enemy_count = 7,
+        .doors = { { 3, 7 }, { 1, -1 } },
+        .door_count = 2,
     },
 };
 
@@ -240,7 +214,8 @@ const Room ROOMS[ROOM_COUNT] = {
 
 const Room& room_at(int index) {
     if (index < 0) index = 0;
-    return ROOMS[index % ROOM_COUNT];
+    if (index >= ROOM_COUNT) index = ROOM_COUNT - 1;
+    return ROOMS[index];
 }
 
 } // namespace inc::game

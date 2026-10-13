@@ -530,3 +530,85 @@ void App::draw_quest_log(render::Renderer& r) const {
 }
 
 } // namespace inc
+// ============================================================================
+// World map (M key): node graph of rooms + Warden node.
+// ============================================================================
+#include <cmath>
+
+namespace inc {
+
+void App::draw_world_map(render::Renderer& r) const {
+    r.set_layer(render::Renderer::Layer::Alpha);
+    r.draw_quad({0.0f, 0.0f}, {VIRTUAL_W, 0.0f},
+                {VIRTUAL_W, VIRTUAL_H}, {0.0f, VIRTUAL_H},
+                rgba(5, 14, 18, 220));
+
+    r.draw_text_centered({VIRTUAL_W * 0.5f, 60.0f},
+                         "HALCYON STATION - RING MAP", 4.0f, COLOR_CORE_INNER);
+
+    constexpr int NODES = 10;
+    const f32 SPACING = 110.0f;
+    const f32 R       = 26.0f;
+    const f32 cx      = VIRTUAL_W * 0.5f;
+    const f32 cy      = VIRTUAL_H * 0.5f;
+    const f32 start_x = cx - f32(NODES - 1) * SPACING * 0.5f;
+
+    static const char* NODE_NUM[10] = {
+        "0","1","2","3","4","5","6","7","8","9"
+    };
+    static const char* NODE_NAME[10] = {
+        "ARENA", "CROSS", "CORRIDOR", "HOURGLASS", "CHOKE",
+        "SPIRAL", "PINCH", "CROSSFIRE", "THE BOX", "WARDEN"
+    };
+
+    for (int i = 0; i < NODES - 1; ++i) {
+        const f32 x0 = start_x + f32(i) * SPACING;
+        const f32 x1 = x0 + SPACING;
+        const bool link_open = world_.is_room_cleared(i);
+        const Color lc = link_open
+            ? with_alpha(COLOR_CORE_EDGE, 140)
+            : with_alpha(COLOR_CORE_EDGE,  40);
+        r.draw_line({ x0 + R, cy }, { x1 - R, cy }, 3.0f, lc);
+    }
+
+    for (int i = 0; i < NODES; ++i) {
+        const bool is_boss = (i == NODES - 1);
+        const f32  x       = start_x + f32(i) * SPACING;
+
+        bool cleared = false, current = false;
+        if (is_boss) {
+            cleared = world_.warden_defeated();
+            current = world_.warden_active();
+        } else {
+            cleared = world_.is_room_cleared(i);
+            current = (i == world_.room_index());
+        }
+        const bool selected = (i == map_cursor_);
+
+        const Color base = is_boss ? COLOR_ENEMY_EDGE : COLOR_CORE_EDGE;
+        r.draw_circle({ x, cy }, R, with_alpha(base, u8(cleared ? 180 : 40)), 20);
+
+        Color ring = with_alpha(base, 140);
+        if (selected || current) ring = COLOR_CORE_INNER;
+        r.draw_ring({ x, cy }, R, R + 3.0f, ring, 24);
+
+        if (selected) {
+            const f32 pulse = 0.5f + 0.5f * std::sin(platform::time_seconds() * 5.0f);
+            r.set_layer(render::Renderer::Layer::Additive);
+            r.draw_ring({ x, cy }, R + 6.0f, R + 9.0f + pulse * 3.0f,
+                        with_alpha(COLOR_CORE_INNER, u8(120 + 100 * pulse)), 24);
+            r.set_layer(render::Renderer::Layer::Alpha);
+        }
+
+        r.draw_text_centered({ x, cy - 10.0f }, NODE_NUM[i], 3.0f,
+                             cleared ? COLOR_VOID : COLOR_CORE_INNER);
+        r.draw_text_centered({ x, cy + R + 16.0f }, NODE_NAME[i], 2.0f,
+                             with_alpha(COLOR_CORE_INNER, 220));
+    }
+
+    r.draw_text_centered({ cx, VIRTUAL_H - 80.0f },
+                         "LEFT/RIGHT: MOVE    ENTER: FAST-TRAVEL    ESC: CLOSE",
+                         2.4f, with_alpha(COLOR_FACET_EDGE, 200));
+}
+
+} // namespace inc

@@ -3,12 +3,61 @@
 #include "platform/platform.hpp"
 #include "audio/audio.hpp"
 #include "game/save.hpp"
-#include "game/log.hpp"
+#include "game/room.hpp"
 
 #include <cmath>
 #include <cstdio>
 
 namespace inc::game {
+
+static Vec2 door_center(u8 side) {
+    constexpr f32 W = VIRTUAL_W;
+    constexpr f32 H = VIRTUAL_H;
+    switch (side) {
+        case 0: return { W * 0.5f, 0.0f };
+        case 1: return { W,        H * 0.5f };
+        case 2: return { W * 0.5f, H };
+        case 3: return { 0.0f,     H * 0.5f };
+    }
+    return { 0.0f, 0.0f };
+}
+
+static Vec2 door_spawn(u8 side) {
+    constexpr f32 W = VIRTUAL_W;
+    constexpr f32 H = VIRTUAL_H;
+    constexpr f32 INSET = 150.0f;
+    switch (side) {
+        case 0: return { W * 0.5f, INSET };
+        case 1: return { W - INSET, H * 0.5f };
+        case 2: return { W * 0.5f, H - INSET };
+        case 3: return { INSET,    H * 0.5f };
+    }
+    return { W * 0.5f, H * 0.5f };
+}
+
+static u8 door_opposite(u8 side) {
+    switch (side) {
+        case 0: return 2;
+        case 1: return 3;
+        case 2: return 0;
+        case 3: return 1;
+    }
+    return side;
+}
+
+static bool door_trigger(const Door& d, Vec2 p) {
+    constexpr f32 EDGE  = 130.0f;
+    constexpr f32 WIDTH = 130.0f;
+    const f32 cx = VIRTUAL_W * 0.5f;
+    const f32 cy = VIRTUAL_H * 0.5f;
+    switch (d.side) {
+        case 0: return p.y < EDGE && std::fabs(p.x - cx) < WIDTH;
+        case 1: return p.x > VIRTUAL_W - EDGE && std::fabs(p.y - cy) < WIDTH;
+        case 2: return p.y > VIRTUAL_H - EDGE && std::fabs(p.x - cx) < WIDTH;
+        case 3: return p.x < EDGE && std::fabs(p.y - cy) < WIDTH;
+    }
+    return false;
+}
 
 static f32 reflect_speed_mult(const Character& ch) {
     f32 m = 1.0f;
@@ -40,6 +89,10 @@ World::World() { reset(); }
 
 void World::reset() {
     character_       = Character{};
+    rooms_cleared_   = 0;
+    door_cooldown_   = 0.0f;
+    room_clear_pulse_= -1.0f;
+    warden_death_timer_ = -1.0f;
     player_hp_       = 3;
     kills_           = 0;
     score_           = 0;
@@ -62,7 +115,14 @@ void World::jump_to_room(int index) {
     warden_defeated_ = false;
     warden_active_   = false;
     levelup_banner_timer_ = 0.0f;
+    door_cooldown_   = 0.0f;
     load_room(index);
+}
+
+void World::travel_to_room(int index) {
+    jump_to_room(index);
+    drone_.position = { VIRTUAL_W * 0.5f, VIRTUAL_H * 0.5f };
+    door_cooldown_  = 0.5f;
 }
 
 void World::load_room(int index) {
@@ -78,8 +138,12 @@ void World::load_room(int index) {
 
     for (auto& t : turrets_) t.alive = false;
     turret_count_ = 0;
-    for (int i = 0; i < r.enemy_count && turret_count_ < 8; ++i) {
-        spawn_turret(r.enemies[i]);
+
+    const bool already_cleared = (rooms_cleared_ & (1u << index)) != 0;
+    if (!already_cleared) {
+        for (int i = 0; i < r.enemy_count && turret_count_ < 8; ++i) {
+            spawn_turret(r.enemies[i]);
+        }
     }
 
     drone_.position    = r.drone_start;
@@ -92,7 +156,7 @@ void World::load_room(int index) {
     for (auto& p : projectiles_) p.alive = false;
     for (auto& f : flashes_)     f.alive = false;
 
-    room_clear_timer_   = -1.0f;
+    room_clear_pulse_   = -1.0f;
     warden_death_timer_ = -1.0f;
 
     std::fprintf(stderr, "[world] loaded room %d '%s' (%d enemies, %d walls)\n",
@@ -178,10 +242,45 @@ void World::award_kill_xp(EnemyType type) {
     }
 }
 
+void World::attempt_door_transition() {
+    if (door_cooldown_ > 0.0f) return;
+    if (warden_active_) return;
+
+    const Room& r = room_at(current_room_);
+    for (int i = 0; i < r.door_count; ++i) {
+        const Door& d = r.doors[i];
+        if (!door_trigger(d, drone_.position)) continue;
+
+        const bool forward = (d.target_room > current_room_) ||
+                             (d.target_room < 0);
+        if (forward && !(rooms_cleared_ & (1u << current_room_))) {
+            return;
+        }
+
+        if (d.target_room < 0) {
+            spawn_warden();
+            door_cooldown_ = 0.5f;
+            return;
+        }
+
+        const int  next       = d.target_room;
+        const u8   entry_side = door_opposite(d.side);
+        jump_to_room(next);
+        drone_.position = door_spawn(entry_side);
+        door_cooldown_  = 0.6f;
+        return;
+    }
+}
+
 void World::step(f32 dt, const platform::InputState& input) {
     if (levelup_banner_timer_ > 0.0f) {
         levelup_banner_timer_ -= dt;
         if (levelup_banner_timer_ < 0.0f) levelup_banner_timer_ = 0.0f;
+    }
+    if (door_cooldown_ > 0.0f) door_cooldown_ -= dt;
+    if (room_clear_pulse_ >= 0.0f) {
+        room_clear_pulse_ += dt;
+        if (room_clear_pulse_ >= 2.0f) room_clear_pulse_ = -1.0f;
     }
 
     if (player_dead_)     { death_screen_timer_   += dt; return; }
@@ -213,6 +312,8 @@ void World::step(f32 dt, const platform::InputState& input) {
                 kc(platform::Key::Up),    kc(platform::Key::Down),
                 kc(platform::Key::Q),     kc(platform::Key::E),
                 kc(platform::Key::Space));
+
+    attempt_door_transition();
 
     if (character_.has_skill(SkillId::Singularity)) {
         for (auto& p : projectiles_) {
@@ -283,39 +384,19 @@ void World::step(f32 dt, const platform::InputState& input) {
         return;
     }
 
-    if (room_clear_timer_ < 0.0f) {
+    if (!(rooms_cleared_ & (1u << current_room_))) {
         int alive_count = 0;
         for (int i = 0; i < turret_count_; ++i) {
             if (turrets_[i].alive) ++alive_count;
         }
         if (alive_count == 0) {
-            room_clear_timer_ = 0.0f;
-            if (current_room_ < LOG_COUNT) {
+            rooms_cleared_ |= u16(1u << current_room_);
+            room_clear_pulse_ = 0.0f;
+            if (current_room_ < ROOM_COUNT) {
                 pending_log_trigger_ = current_room_;
             }
-            std::fprintf(stderr, "[world] room cleared - advancing\n");
+            std::fprintf(stderr, "[world] room %d cleared\n", current_room_);
             std::fflush(stderr);
-        }
-    } else {
-        room_clear_timer_ += dt;
-        if (room_clear_timer_ >= 2.0f) {
-            if (current_room_ == ROOM_COUNT - 1) {
-                spawn_warden();
-            } else {
-                if (current_room_ == 2) {
-                    character_.inventory.unlock(FacetId::Wide);
-                    character_.inventory.unlock(CoreId::Coral);
-                    character_.inventory.unlock(HullId::Reactive);
-                }
-                if (current_room_ == 5) {
-                    character_.inventory.unlock(FacetId::Heavy);
-                    character_.inventory.unlock(CoreId::Quartz);
-                    character_.inventory.unlock(HullId::Silent);
-                }
-                const int next = current_room_ + 1;
-                load_room(next);
-                save_game("save.sav", character_, next);
-            }
         }
     }
 }
@@ -577,6 +658,34 @@ void World::draw(render::Renderer& r) const {
     r.draw_line({ W - T, H - T }, { T, H - T }, T, COLOR_WALL_EDGE);
     r.draw_line({ T, H - T }, { T, T }, T, COLOR_WALL_EDGE);
 
+    const Room& cur = room_at(current_room_);
+    for (int i = 0; i < cur.door_count; ++i) {
+        const Door& d = cur.doors[i];
+        const bool forward = (d.target_room > current_room_) ||
+                             (d.target_room < 0);
+        const bool locked  = forward && !(rooms_cleared_ & (1u << current_room_));
+        const Color dc = locked
+            ? with_alpha(COLOR_ENEMY_EDGE, 140)
+            : with_alpha(COLOR_CORE_INNER, 220);
+        const f32 thickness = locked ? 3.0f : 5.0f;
+
+        constexpr f32 HALF = 120.0f;
+        switch (d.side) {
+            case 0:
+                r.draw_line({ W*0.5f - HALF, 4.0f }, { W*0.5f + HALF, 4.0f }, thickness, dc);
+                break;
+            case 1:
+                r.draw_line({ W - 4.0f, H*0.5f - HALF }, { W - 4.0f, H*0.5f + HALF }, thickness, dc);
+                break;
+            case 2:
+                r.draw_line({ W*0.5f - HALF, H - 4.0f }, { W*0.5f + HALF, H - 4.0f }, thickness, dc);
+                break;
+            case 3:
+                r.draw_line({ 4.0f, H*0.5f - HALF }, { 4.0f, H*0.5f + HALF }, thickness, dc);
+                break;
+        }
+    }
+
     for (int i = 0; i < wall_count_; ++i) {
         const Wall& w = walls_[i];
         r.draw_line(w.a, w.b, 12.0f, COLOR_WALL_FILL);
@@ -736,14 +845,14 @@ void World::draw(render::Renderer& r) const {
             const bool is_boss_dot = (i == DOTS - 1);
             bool completed = false, current = false;
             if (is_boss_dot) {
-                completed = warden_active_ && !warden_.alive;
+                completed = warden_defeated_;
                 current   = warden_active_ && warden_.alive;
             } else {
-                if (warden_active_) completed = true;
-                else { completed = (i < current_room_); current = (i == current_room_); }
+                completed = (rooms_cleared_ & (1u << i)) != 0;
+                current   = (i == current_room_);
             }
             const Color dot_color = is_boss_dot ? COLOR_ENEMY_EDGE : COLOR_CORE_EDGE;
-            if (completed)      r.draw_circle(c, R, with_alpha(dot_color, 140), 12);
+            if (completed && !current) r.draw_circle(c, R, with_alpha(dot_color, 140), 12);
             else if (current)   { r.draw_circle(c, R, dot_color, 12);
                                   r.draw_ring(c, R + 2.0f, R + 4.0f, dot_color, 16); }
             else                r.draw_ring(c, R - 1.0f, R, with_alpha(dot_color, 100), 12);
@@ -755,11 +864,13 @@ void World::draw(render::Renderer& r) const {
         constexpr f32 BAR_H = 18.0f;
         constexpr f32 BAR_X = (VIRTUAL_W - BAR_W) * 0.5f;
         constexpr f32 BAR_Y = VIRTUAL_H - 60.0f;
+
         r.draw_quad({ BAR_X,         BAR_Y         },
                     { BAR_X + BAR_W, BAR_Y         },
                     { BAR_X + BAR_W, BAR_Y + BAR_H },
                     { BAR_X,         BAR_Y + BAR_H },
                     with_alpha(COLOR_ENEMY_EDGE, 60));
+
         const f32 fill_w = BAR_W * clamp(f32(warden_.hp) / f32(warden_.hp_max), 0.0f, 1.0f);
         if (fill_w > 0.5f) {
             const f32 hp_ratio = f32(warden_.hp) / f32(warden_.hp_max);
@@ -777,8 +888,8 @@ void World::draw(render::Renderer& r) const {
         }
     }
 
-    if (!warden_active_ && room_clear_timer_ >= 0.0f) {
-        const f32 t = clamp(room_clear_timer_ / 2.0f, 0.0f, 1.0f);
+    if (room_clear_pulse_ >= 0.0f) {
+        const f32 t = clamp(room_clear_pulse_ / 2.0f, 0.0f, 1.0f);
         const f32 radius = 30.0f + t * 700.0f;
         const u8  a = u8((1.0f - t) * 200.0f);
         r.draw_ring(drone_.position, radius - 4.0f, radius + 4.0f,

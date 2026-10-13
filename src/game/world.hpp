@@ -30,6 +30,7 @@ public:
 
     void reset();
     void jump_to_room(int index);
+    void travel_to_room(int index);
     void step(f32 dt, const platform::InputState& input);
     void draw(render::Renderer& r) const;
 
@@ -40,6 +41,10 @@ public:
     [[nodiscard]] bool warden_active() const noexcept { return warden_active_; }
     [[nodiscard]] bool player_dead() const noexcept { return player_dead_; }
     [[nodiscard]] bool warden_defeated() const noexcept { return warden_defeated_; }
+    [[nodiscard]] bool is_room_cleared(int index) const noexcept {
+        return index >= 0 && index < 16
+            && (rooms_cleared_ & (1u << index)) != 0;
+    }
 
     [[nodiscard]] Character&       character()       noexcept { return character_; }
     [[nodiscard]] const Character& character() const noexcept { return character_; }
@@ -63,6 +68,7 @@ private:
     bool collide_with_walls(Projectile& p);
 
     void award_kill_xp(EnemyType type);
+    void attempt_door_transition();
 
     Drone      drone_;
     Turret     turrets_[8];
@@ -84,7 +90,9 @@ private:
     bool player_dead_       = false;
     bool warden_defeated_   = false;
 
-    f32  room_clear_timer_    = -1.0f;
+    u16  rooms_cleared_       = 0;
+    f32  door_cooldown_       = 0.0f;
+    f32  room_clear_pulse_    = -1.0f;
     f32  warden_death_timer_  = -1.0f;
     f32  death_screen_timer_  = 0.0f;
     f32  victory_screen_timer_= 0.0f;
