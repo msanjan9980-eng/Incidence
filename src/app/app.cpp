@@ -1070,7 +1070,6 @@ void App::draw_room_intro(render::Renderer& r) const {
 
 
 void App::draw_pause_menu(render::Renderer& r) const {
-    const f32 t = f32(platform::time_seconds());
     r.set_layer(render::Renderer::Layer::Alpha);
     r.draw_quad({0,0}, {VIRTUAL_W,0}, {VIRTUAL_W,VIRTUAL_H}, {0,VIRTUAL_H},
                 rgba(0, 0, 0, 210));
