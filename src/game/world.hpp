@@ -12,6 +12,7 @@
 #include "game/character.hpp"
 #include "game/screen.hpp"
 #include "render/effects.hpp"
+#include "render/particles.hpp"
 
 namespace inc::render { class Renderer; }
 namespace inc::platform { struct InputState; }
@@ -115,6 +116,7 @@ private:
     int  levelup_banner_level_ = 1;
 
     render::Effects effects_;
+    fx::ParticleSystem game_particles_;
     int  pending_log_trigger_ = -1;
 };
 

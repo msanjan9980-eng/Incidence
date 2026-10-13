@@ -160,6 +160,7 @@ void World::load_room(int index) {
 
     for (auto& p : projectiles_) p.alive = false;
     for (auto& f : flashes_)     f.alive = false;
+    game_particles_.clear();
 
     room_clear_pulse_   = -1.0f;
     warden_death_timer_ = -1.0f;
@@ -278,6 +279,8 @@ void World::attempt_door_transition() {
 }
 
 void World::step(f32 dt, const platform::InputState& input) {
+    game_particles_.update(dt);
+
     effects_.update(dt);
     if (effects_.hitstop > 0.0f) return;
 
@@ -312,7 +315,16 @@ void World::step(f32 dt, const platform::InputState& input) {
             const f32 d2 = (p.pos - drone_.position).length_sq();
             if (d2 < best_d2) { best_d2 = d2; best = &p; }
         }
-        if (best) { spawn_flash(best->pos); best->alive = false; }
+        if (best) {
+            spawn_flash(best->pos);
+            // reflect spark - cyan burst at the shield impact point
+            game_particles_.burst(best->pos, 14,
+                                  180.0f, 420.0f, 0.18f, 0.35f,
+                                  0.0f, TAU, 1.6f, 0.2f,
+                                  COLOR_CORE_INNER, COLOR_CORE_EDGE,
+                                  fx::ParticleKind::Spark, 60.0f, 0.93f, 0.0f);
+            best->alive = false;
+        }
     }
 
     drone_.step(dt, character_,
@@ -644,6 +656,12 @@ bool World::resolve_collisions(Projectile& p) {
             effects_.add_shake(16.0f, 0.45f);
             effects_.add_hitstop(0.06f);
             player_hp_--;
+    // damage burst - red ember explosion from the drone
+    game_particles_.burst(drone_.position, 44,
+                          140.0f, 420.0f, 0.45f, 0.9f,
+                          0.0f, TAU, 2.8f, 0.2f,
+                          COLOR_ENEMY_CORE, COLOR_ENEMY_EDGE,
+                          fx::ParticleKind::Ember, 200.0f, 0.92f, 5.0f);
             audio::play_player_hit();
             if (player_hp_ <= 0) player_dead_ = true;
             return true;
@@ -761,6 +779,7 @@ void World::draw(render::Renderer& r) const {
     for (const auto& p : projectiles_) p.draw(r);
     drone_.draw(r);
     drone_fx::draw_reticle(r, drone_, character_, f32(platform::time_seconds()));
+    game_particles_.draw(r);
 
     r.set_layer(render::Renderer::Layer::Additive);
 
