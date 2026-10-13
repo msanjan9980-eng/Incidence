@@ -736,7 +736,7 @@ void App::draw_room_intro(render::Renderer& r) const {
     r.draw_text({x0 + 156, y0 + 76}, ROOM_NAME[idx], 5.6f,
                 with_alpha(COLOR_CORE_INNER, u8(alpha * 255)));
     banner_title_scan(r, elapsed, x0 + 156, x0 + 156 + r.text_width(ROOM_NAME[idx], 5.6f),
-                      y0 + 118, alpha, accent);
+                      y0 + 128, alpha, accent);
 
     const f32 div_y = y0 + 168;
     const f32 div_age = clamp((elapsed - 0.40f) / 0.35f, 0.0f, 1.0f);
@@ -759,8 +759,15 @@ void App::draw_room_intro(render::Renderer& r) const {
     if (blurb_age > 0.0f) {
         render::icon_chevron(r, {x0 + 96, y0 + 200}, 20.0f, 0.0f,
                              with_alpha(accent, u8(alpha * 220 * blurb_age)));
-        r.draw_text({x0 + 128, y0 + 190}, ROOM_BLURB[idx], 2.2f,
-                    with_alpha(COLOR_FACET_EDGE, u8(alpha * 220 * blurb_age)));
+        {
+                char blurb_lines[3][128];
+                const int nlines = banner_wrap_text(ROOM_BLURB[idx], 72, blurb_lines, 3);
+                for (int li = 0; li < nlines; ++li) {
+                    r.draw_text({x0 + 128, y0 + 190 + f32(li) * 32.0f},
+                                blurb_lines[li], 2.2f,
+                                with_alpha(COLOR_FACET_EDGE, u8(alpha * 220 * blurb_age)));
+                }
+            }
     }
 
     int lancers = 0, bankers = 0, leads = 0;
@@ -782,13 +789,7 @@ void App::draw_room_intro(render::Renderer& r) const {
                     tbuf, 2.0f, with_alpha(COLOR_ENEMY_EDGE, u8(alpha * 220)));
     }
 
-    if (!boss) {
-        banner_room_mini(r, x1 - 110, y0 + 220, 140.0f,
-                         game::room_at(idx).wall_count, game::room_at(idx).door_count,
-                         alpha, accent, COLOR_FACET_EDGE);
-        r.draw_text({x1 - 190, y0 + 302}, "FLOOR PLAN", 1.8f,
-                    with_alpha(COLOR_FACET_EDGE, u8(alpha * 180)));
-    }
+    // floor plan placeholder removed - was colliding with status pill
 
     banner_top_chevrons(r, elapsed, x0 + 60, y0 - 18, x1 - 60, alpha, accent);
     banner_status_ticks(r, x0 + 60, y1 + 20, x1 - 60,

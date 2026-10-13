@@ -321,4 +321,25 @@ inline void banner_badge_orbit(render::Renderer& r,
                 with_alpha(color, u8(alpha * 60)), 40);
 }
 
+// Word-wrap text to fit ~chars_per_line. Returns number of lines used.
+inline int banner_wrap_text(const char* text, int chars_per_line,
+                            char lines[][128], int max_lines) {
+    int line = 0, col = 0, i = 0;
+    lines[0][0] = 0;
+    while (text[i] && line < max_lines) {
+        int ws = i;
+        while (text[i] && text[i] != ' ') ++i;
+        const int wlen = i - ws;
+        if (text[i] == ' ') ++i;
+        if (col > 0 && col + 1 + wlen > chars_per_line) {
+            if (++line >= max_lines) break;
+            col = 0;
+            lines[line][0] = 0;
+        }
+        if (col > 0 && col < 126) lines[line][col++] = ' ';
+        for (int k = 0; k < wlen && col < 127; ++k) lines[line][col++] = text[ws + k];
+        lines[line][col] = 0;
+    }
+    return line + 1;
+}
 } // namespace inc

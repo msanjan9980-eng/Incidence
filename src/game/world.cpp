@@ -6,6 +6,7 @@
 #include "game/save.hpp"
 #include "game/room.hpp"
 #include "render/drone_fx.hpp"
+#include "render/levelup_fx.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -245,6 +246,19 @@ void World::award_kill_xp(EnemyType type) {
         levelup_banner_timer_ = 2.0f;
         levelup_banner_level_ = character_.level;
         save_game("save.sav", character_, current_room_, rooms_visited_);
+        effects_.add_flash(COLOR_CORE_INNER, 0.30f);
+        effects_.add_hitstop(0.06f);
+        const f32 lev_cy = f32(VIRTUAL_H) * 0.42f;
+        game_particles_.burst({40.0f, lev_cy}, 60,
+                              260.0f, 640.0f, 0.9f, 1.6f,
+                              0.0f, PI * 0.8f, 2.4f, 0.2f,
+                              COLOR_CORE_INNER, COLOR_CORE_EDGE,
+                              fx::ParticleKind::Ember, 220.0f, 0.94f, 4.0f);
+        game_particles_.burst({f32(VIRTUAL_W) - 40.0f, lev_cy}, 60,
+                              260.0f, 640.0f, 0.9f, 1.6f,
+                              PI, PI * 0.8f, 2.4f, 0.2f,
+                              COLOR_CORE_INNER, COLOR_CORE_EDGE,
+                              fx::ParticleKind::Ember, 220.0f, 0.94f, 4.0f);
     }
 }
 
@@ -1059,22 +1073,8 @@ void World::draw(render::Renderer& r) const {
     }
 
     if (levelup_banner_timer_ > 0.0f) {
-        const f32 t = 1.0f - (levelup_banner_timer_ / 2.0f);
-        const f32 alpha = clamp(1.0f - t * t, 0.0f, 1.0f);
-        const f32 cx = VIRTUAL_W * 0.5f;
-        const f32 cy = VIRTUAL_H * 0.42f;
-        char buf[32];
-        std::snprintf(buf, sizeof(buf), "LEVEL %d", levelup_banner_level_);
-        r.set_layer(render::Renderer::Layer::Alpha);
-        r.draw_text_centered({ cx, cy }, buf, 7.5f,
-                             with_alpha(COLOR_CORE_INNER, u8(alpha * 255.0f)));
-        r.draw_text_centered({ cx, cy + 90.0f }, "+1 STAT POINT  +1 SKILL POINT",
-                             2.4f,
-                             with_alpha(COLOR_FACET_EDGE, u8(alpha * 220.0f)));
-        r.set_layer(render::Renderer::Layer::Additive);
-        r.draw_circle({ cx, cy + 30.0f }, 320.0f,
-                      with_alpha(COLOR_CORE_EDGE, u8(alpha * 40.0f)), 40);
-        r.set_layer(render::Renderer::Layer::Alpha);
+        const f32 elapsed = 2.0f - levelup_banner_timer_;
+        levelup_fx::draw_banner(r, levelup_banner_level_, elapsed, 2.0f);
     }
 }
 
