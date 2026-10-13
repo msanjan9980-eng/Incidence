@@ -160,6 +160,20 @@ void World::load_room(int index) {
     drone_.dash_cd     = 0.0f;
     drone_.shield_span = character_.shield_span_rad();
 
+    // Landing pulse - drone drops into a new sector
+    game_particles_.clear();
+    game_particles_.burst(drone_.position, 24,
+                          120.0f, 340.0f, 0.5f, 1.0f,
+                          0.0f, TAU, 1.8f, 0.2f,
+                          COLOR_CORE_INNER, COLOR_CORE_EDGE,
+                          fx::ParticleKind::Spark, 160.0f, 0.94f, 0.0f);
+    game_particles_.burst(drone_.position, 8,
+                          40.0f, 120.0f, 0.4f, 0.8f,
+                          0.0f, TAU, 2.4f, 0.2f,
+                          COLOR_CORE_EDGE, COLOR_FACET_EDGE,
+                          fx::ParticleKind::Ember, 80.0f, 0.96f, 2.0f);
+    effects_.spawn_ring(drone_.position, 90.0f, COLOR_CORE_INNER, 0.4f);
+
     for (auto& p : projectiles_) p.alive = false;
     for (auto& f : flashes_)     f.alive = false;
     game_particles_.clear();
@@ -572,6 +586,27 @@ bool World::resolve_warden_collisions(Projectile& p) {
             effects_.add_hitstop(0.12f);
             effects_.spawn_burst(warden_.pos, 60, 720.0f, COLOR_ENEMY_CORE);
             effects_.spawn_ring(warden_.pos, 320.0f, COLOR_CORE_INNER, 1.2f);
+            // Warden death - layered particle cascade
+            game_particles_.burst(warden_.pos, 120,
+                                  280.0f, 820.0f, 1.0f, 2.2f,
+                                  0.0f, TAU, 3.2f, 0.2f,
+                                  COLOR_ENEMY_CORE, COLOR_CORE_EDGE,
+                                  fx::ParticleKind::Ember, 220.0f, 0.94f, 6.0f);
+            game_particles_.burst(warden_.pos, 40,
+                                  180.0f, 460.0f, 0.7f, 1.4f,
+                                  0.0f, TAU, 2.0f, 0.15f,
+                                  COLOR_CORE_INNER, COLOR_CORE_EDGE,
+                                  fx::ParticleKind::Spark, 120.0f, 0.93f, 0.0f);
+            for (int k = 0; k < 6; ++k) {
+                const f32 a = TAU * f32(k) / 6.0f;
+                const Vec2 origin {warden_.pos.x + std::cos(a) * 40.0f,
+                                   warden_.pos.y + std::sin(a) * 40.0f};
+                game_particles_.burst(origin, 14,
+                                      200.0f, 520.0f, 0.6f, 1.2f,
+                                      a, PI * 0.5f, 2.4f, 0.2f,
+                                      COLOR_ENEMY_EDGE, COLOR_CORE_EDGE,
+                                      fx::ParticleKind::Ember, 200.0f, 0.94f, 4.0f);
+            }
             const int gained = character_.add_xp(2500);
             if (gained > 0) {
                 levelup_banner_timer_ = 2.0f;
