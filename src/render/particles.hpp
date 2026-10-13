@@ -15,6 +15,7 @@
 #include "core/math.hpp"
 #include "core/vec2.hpp"
 #include "render/renderer.hpp"
+#include "render/fx.hpp"
 
 namespace inc::fx {
 

@@ -4,6 +4,7 @@
 #include "platform/platform.hpp"
 #include "render/renderer.hpp"
 #include "game/world.hpp"
+#include "render/particles.hpp"
 #include "game/screen.hpp"
 #include "game/log.hpp"
 #include "game/quest.hpp"
@@ -60,6 +61,7 @@ private:
     f32           intro_time_   = 0.0f;
     f32           main_menu_time_ = 0.0f;
     int           menu_cursor_    = 0;
+    fx::ParticleSystem menu_particles_;
     f32           title_time_   = 0.0f;
     f32           victory_time_ = 0.0f;
 

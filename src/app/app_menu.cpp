@@ -676,6 +676,9 @@ void App::draw_main_menu(render::Renderer& r) const {
     fx::ticker(r, t, "  >> SYSTEM NOMINAL  //  NO ANOMALIES DETECTED  //  WARDEN SIGNAL STABLE  ",
                f32(VIRTUAL_H) - 16.0f, 90.0f, COLOR_FACET_EDGE, a * 0.7f);
 
+    // Menu interaction particles - drawn below CRT post-FX
+    menu_particles_.draw(r);
+
     // ---- Post-FX, place these LAST ----
     fx::glitch_slice(r, t, a * 0.9f);
     fx::noise_bars(r, t, a * 0.55f, 22);
