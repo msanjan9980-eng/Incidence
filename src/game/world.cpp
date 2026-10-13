@@ -1,4 +1,4 @@
-﻿#include "game/world.hpp"
+#include "game/world.hpp"
 #include "render/renderer.hpp"
 #include "platform/platform.hpp"
 
@@ -174,7 +174,7 @@ void World::step(f32 dt, const platform::InputState& input) {
         }
         if (alive_count == 0) {
             room_clear_timer_ = 0.0f;
-            std::fprintf(stderr, "[world] room cleared — advancing\n");
+            std::fprintf(stderr, "[world] room cleared � advancing\n");
             std::fflush(stderr);
         }
     } else {
@@ -383,7 +383,7 @@ void World::draw(render::Renderer& r) const {
         constexpr f32 BAR_Y = 30.0f;
         constexpr f32 BAR_W = 300.0f;
         constexpr f32 BAR_H = 12.0f;
-        constexpr f32 SCORE_MAX = 20000.0f;
+        constexpr f32 SCORE_MAX = f32(ROOM_COUNT) * 40000.0f;
 
         r.draw_quad({ BAR_X,           BAR_Y           },
                     { BAR_X + BAR_W,   BAR_Y           },
@@ -410,7 +410,7 @@ void World::draw(render::Renderer& r) const {
     {
         constexpr f32 CX = VIRTUAL_W * 0.5f;
         constexpr f32 CY = 40.0f;
-        constexpr f32 SPACING = 24.0f;
+        const f32 SPACING = (ROOM_COUNT <= 6) ? 24.0f : 16.0f;
         constexpr f32 R = 6.0f;
         const f32 start_x = CX - f32(ROOM_COUNT - 1) * SPACING * 0.5f;
         for (int i = 0; i < ROOM_COUNT; ++i) {

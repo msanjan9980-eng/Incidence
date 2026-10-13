@@ -13,7 +13,6 @@ struct Wall {
 
 [[nodiscard]] f32 closest_point_on_segment(Vec2 p, Vec2 a, Vec2 b, Vec2& out_closest);
 
-// Enemy spawn descriptor — position plus archetype.
 struct EnemySpawn {
     Vec2      pos;
     EnemyType type = EnemyType::Lancer;
@@ -28,7 +27,9 @@ struct Room {
     int         enemy_count = 0;
 };
 
-inline constexpr int ROOM_COUNT = 3;
+// The campaign is nine rooms. Increase this as we add more to ROOMS[] in
+// room.cpp; the HUD auto-scales.
+inline constexpr int ROOM_COUNT = 9;
 
 [[nodiscard]] const Room& room_at(int index);
 
