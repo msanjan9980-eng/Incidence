@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "core/math.hpp"
 
@@ -21,7 +21,7 @@ namespace inc::render {
 
 inline constexpr u8 FONT_GLYPH_WIDTH  = 5;
 inline constexpr u8 FONT_GLYPH_HEIGHT = 7;
-inline constexpr u8 FONT_ADVANCE      = 6;   // 5 pixels + 1 spacing
+inline constexpr u8 FONT_ADVANCE      = 7;   // 5 pixels + 2 spacing
 
 inline constexpr u8 FONT_FIRST_CHAR = 32;
 inline constexpr u8 FONT_LAST_CHAR  = 126;

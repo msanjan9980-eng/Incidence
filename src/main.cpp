@@ -1,6 +1,15 @@
-﻿#include "app/app.hpp"
+#include "app/app.hpp"
 #include "platform/platform.hpp"
 
+#if defined(_WIN32)
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  include <windows.h>
+#endif
 #include "sokol_app.h"
 #include "sokol_time.h"
 #include "sokol_log.h"
@@ -53,6 +62,39 @@ static void on_sokol_log(const char* tag,
     std::fflush(stderr);
 }
 
+#if defined(_WIN32)
+static void apply_borderless_fullscreen() {
+    HWND hwnd = FindWindowA(nullptr, "INCIDENCE");
+    if (!hwnd) {
+        std::fprintf(stderr, "[incidence] fullscreen: window not found\n");
+        return;
+    }
+    // Strip decorations
+    LONG style = GetWindowLongA(hwnd, GWL_STYLE);
+    style &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX
+             | WS_MAXIMIZEBOX | WS_SYSMENU);
+    SetWindowLongA(hwnd, GWL_STYLE, style);
+
+    // Cover the primary monitor
+    HMONITOR hmon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi = { sizeof(mi) };
+    GetMonitorInfoA(hmon, &mi);
+    const int mx = mi.rcMonitor.left;
+    const int my = mi.rcMonitor.top;
+    const int mw = mi.rcMonitor.right - mi.rcMonitor.left;
+    const int mh = mi.rcMonitor.bottom - mi.rcMonitor.top;
+
+    // Borderless fullscreen, no permanent topmost.
+    SetWindowPos(hwnd, HWND_TOP, mx, my, mw, mh,
+                 SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+    // One-shot focus steal so the window appears over other apps at launch.
+    SetForegroundWindow(hwnd);
+    BringWindowToTop(hwnd);
+    std::fprintf(stderr, "[incidence] fullscreen: %dx%d at (%d,%d)\n",
+                 mw, mh, mx, my);
+}
+#endif
+
 static void on_init() {
     std::fprintf(stderr, "[incidence] on_init called\n"); std::fflush(stderr);
     stm_setup();
@@ -62,6 +104,13 @@ static void on_init() {
 }
 
 static void on_frame() {
+#if defined(_WIN32)
+    static bool s_fullscreen_done = false;
+    if (!s_fullscreen_done) {
+        s_fullscreen_done = true;
+        apply_borderless_fullscreen();
+    }
+#endif
     g_app.frame();
     platform_end_frame_cb();
     if (!g_app.running()) sapp_quit();
@@ -80,8 +129,8 @@ sapp_desc sokol_main(int /*argc*/, char* /*argv*/[]) {
     desc.frame_cb     = on_frame;
     desc.cleanup_cb   = on_cleanup;
     desc.event_cb     = on_event;
-    desc.width        = 1280;
-    desc.height       = 720;
+    desc.width        = 1920;
+    desc.height       = 1080;
     desc.window_title = "INCIDENCE";
     desc.high_dpi     = true;
     desc.logger.func  = on_sokol_log;   // <-- route all sokol messages to us

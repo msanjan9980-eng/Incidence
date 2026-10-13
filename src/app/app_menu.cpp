@@ -606,7 +606,7 @@ void App::draw_main_menu(render::Renderer& r) const {
 
     // Menu items
     const char* items[3] = { "START NEW RUN", "CONTINUE", "QUIT" };
-    const bool enabled[3] = { true, has_save, true };
+    const bool enabled[3] = { true, true, true };
     const f32 item_x = f32(VIRTUAL_W) * 0.5f;
     const f32 item_y0 = 640.0f;
     const f32 item_dy = 82.0f;
