@@ -1,5 +1,6 @@
 #include "app/app.hpp"
 #include "render/fx.hpp"
+#include "render/hud_fx.hpp"
 #include "render/particles.hpp"
 #include "render/field.hpp"
 #include "audio/audio.hpp"
