@@ -57,6 +57,7 @@ add_executable(incidence
     src/game/warden.cpp
     src/game/character.cpp
     src/game/save.cpp
+    src/game/profile.cpp
     src/game/skill.cpp
     src/game/equipment.cpp
     src/game/inventory.cpp
@@ -85,6 +86,7 @@ set_source_files_properties(
     src/game/warden.cpp
     src/game/character.cpp
     src/game/save.cpp
+    src/game/profile.cpp
     src/game/skill.cpp
     src/game/equipment.cpp
     src/game/inventory.cpp
