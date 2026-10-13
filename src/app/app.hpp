@@ -87,6 +87,7 @@ private:
 
     bool          paused_          = false;
     int           pause_cursor_    = 0;
+int           end_cursor_      = 0;
     f32           action_toast_t_  = 0.0f;
     char          action_toast_text_[64] = {};
     Color         action_toast_color_ = 0;

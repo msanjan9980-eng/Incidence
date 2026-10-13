@@ -322,9 +322,11 @@ void App::step(f32 dt) {
             }
             if (in.key_pressed[static_cast<int>(platform::Key::Up)]) {
                 if (pause_cursor_ > 0) --pause_cursor_;
+                else pause_cursor_ = 3;
             }
             if (in.key_pressed[static_cast<int>(platform::Key::Down)]) {
-                if (pause_cursor_ < 2) ++pause_cursor_;
+                if (pause_cursor_ < 3) ++pause_cursor_;
+                else pause_cursor_ = 0;
             }
             if (in.key_pressed[static_cast<int>(platform::Key::Enter)]) {
                 if (pause_cursor_ == 0) {
@@ -337,6 +339,21 @@ void App::step(f32 dt) {
                     last_warden_state_ = false;
                     room_intro_timer_  = -1.0f;
                     paused_ = false;
+                } else if (pause_cursor_ == 2) {
+                    profile_save_active(world_.character(), world_.room_index(), world_.rooms_visited());
+                    paused_ = false;
+                    pause_cursor_ = 0;
+                    character_sheet_open_ = false;
+                    skill_tree_open_      = false;
+                    equipment_panel_open_ = false;
+                    log_archive_open_     = false;
+                    quest_log_open_       = false;
+                    world_map_open_       = false;
+                    logs_ = game::LogState{};
+                    quests_ = game::QuestState{};
+                    screen_ = game::Screen::MainMenu;
+                    main_menu_time_ = 0.0f;
+                    menu_cursor_ = 0;
                 } else {
                     running_ = false;
                 }
@@ -579,9 +596,40 @@ void App::step(f32 dt) {
     }
 
     case game::Screen::GameOver: {
-        if (any_pressed) {
-            screen_ = game::Screen::Title;
-            title_time_ = 0.0f;
+        if (in.key_pressed[static_cast<int>(platform::Key::Up)]) {
+            if (end_cursor_ > 0) --end_cursor_;
+            else end_cursor_ = 2;
+        }
+        if (in.key_pressed[static_cast<int>(platform::Key::Down)]) {
+            if (end_cursor_ < 2) ++end_cursor_;
+            else end_cursor_ = 0;
+        }
+        if (in.key_pressed[static_cast<int>(platform::Key::Enter)]) {
+            if (end_cursor_ == 0) {
+                end_cursor_ = 0;
+                world_.reset();
+                logs_ = game::LogState{};
+                quests_ = game::QuestState{};
+                last_room_shown_   = -1;
+                last_warden_state_ = false;
+                room_intro_timer_  = -1.0f;
+                character_sheet_open_ = false;
+                skill_tree_open_      = false;
+                equipment_panel_open_ = false;
+                log_archive_open_     = false;
+                quest_log_open_       = false;
+                world_map_open_       = false;
+                screen_ = game::Screen::Playing;
+            } else if (end_cursor_ == 1) {
+                end_cursor_ = 0;
+                logs_ = game::LogState{};
+                quests_ = game::QuestState{};
+                screen_ = game::Screen::MainMenu;
+                main_menu_time_ = 0.0f;
+                menu_cursor_ = 0;
+            } else {
+                running_ = false;
+            }
         }
         break;
     }
@@ -674,10 +722,25 @@ void App::draw_game_over(render::Renderer& r) const {
     render::draw_menu_background(r, f32(platform::time_seconds()), COLOR_ENEMY_EDGE, 140);
     r.set_layer(render::Renderer::Layer::Alpha);
     r.draw_quad({0,0}, {VIRTUAL_W,0}, {VIRTUAL_W,VIRTUAL_H}, {0,VIRTUAL_H}, rgba(40,0,0,120));
-    r.draw_text_centered({VIRTUAL_W*0.5f, VIRTUAL_H*0.42f},
+    r.draw_text_centered({VIRTUAL_W*0.5f, VIRTUAL_H*0.30f},
                          "DEFLECTOR OFFLINE", 8.0f, COLOR_ENEMY_CORE);
-    r.draw_text_centered({VIRTUAL_W*0.5f, VIRTUAL_H*0.55f},
-                         "PRESS ANY KEY", 3.0f, COLOR_ENEMY_EDGE);
+    static const char* OPTIONS[3] = { "RETRY", "RETURN TO MAIN MENU", "QUIT TO DESKTOP" };
+    for (int i = 0; i < 3; ++i) {
+        const f32 y = VIRTUAL_H * 0.52f + f32(i) * 70.0f;
+        const bool sel = (i == end_cursor_);
+        if (sel) {
+            const f32 pulse = 0.5f + 0.5f * std::sin(platform::time_seconds() * 5.0f);
+            r.set_layer(render::Renderer::Layer::Additive);
+            r.draw_circle({VIRTUAL_W*0.5f, y + 20.0f}, 220.0f,
+                          with_alpha(COLOR_ENEMY_CORE, u8(20 + 20 * pulse)), 40);
+            r.set_layer(render::Renderer::Layer::Alpha);
+        }
+        const Color c = sel ? COLOR_ENEMY_CORE : with_alpha(COLOR_ENEMY_EDGE, 180);
+        r.draw_text_centered({VIRTUAL_W*0.5f, y}, OPTIONS[i], 3.2f, c);
+    }
+    r.draw_text_centered({VIRTUAL_W*0.5f, VIRTUAL_H - 80.0f},
+                         "UP/DOWN: SELECT   ENTER: CONFIRM",
+                         2.0f, with_alpha(COLOR_FACET_EDGE, 200));
 }
 
 void App::draw_victory(render::Renderer& r) const {
@@ -925,8 +988,8 @@ void App::draw_pause_menu(render::Renderer& r) const {
 
     r.draw_text_centered({cx, cy - 220.0f}, "PAUSED", 9.0f, COLOR_CORE_INNER);
 
-    static const char* OPTIONS[3] = { "RESUME", "RESTART", "QUIT TO DESKTOP" };
-    for (int i = 0; i < 3; ++i) {
+    static const char* OPTIONS[4] = { "RESUME", "RESTART", "RETURN TO MAIN MENU", "QUIT TO DESKTOP" };
+    for (int i = 0; i < 4; ++i) {
         const f32 y = cy - 40.0f + f32(i) * 70.0f;
         const bool sel = (i == pause_cursor_);
         if (sel) {
