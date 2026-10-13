@@ -1,4 +1,7 @@
 #include "app/app.hpp"
+#include "render/fx.hpp"
+#include "render/particles.hpp"
+#include "render/field.hpp"
 #include "audio/audio.hpp"
 #include "game/save.hpp"
 #include "render/icons.hpp"
@@ -310,6 +313,38 @@ void App::draw_main_menu(render::Renderer& r) const {
     r.draw_circle({f32(VIRTUAL_W) * 0.5f, 230.0f}, 380.0f + std::sin(t * 1.2f) * 20.0f,
                   with_alpha(COLOR_CORE_EDGE, u8(a * 10.0f)), 48);
     r.set_layer(render::Renderer::Layer::Alpha);
+
+    // ---------- Batch 1 additions ----------
+    // Light shafts fanning down from the horizon
+    fx::light_shafts(r, f32(VIRTUAL_W) * 0.5f, f32(VIRTUAL_H) * 0.78f, t,
+                     COLOR_CORE_EDGE, a * 0.8f, 9);
+
+    // Drifting constellation across the top half
+    fx::constellation(r, t * 0.6f, COLOR_CORE_INNER, a * 0.6f, 60, 8.0f);
+
+    // Data streams hugging the left and right edges
+    fx::data_stream(r, t, 40.0f, 120.0f, 40, COLOR_CORE_EDGE, a * 0.7f);
+    fx::data_stream(r, t + 3.7f, f32(VIRTUAL_W) - 160.0f, 120.0f, 40,
+                    COLOR_FACET_EDGE, a * 0.55f);
+
+    // Orbiting dust cloud behind the title
+    fx::orbiting_cloud(r, {f32(VIRTUAL_W) * 0.5f, 260.0f}, t,
+                       COLOR_CORE_INNER, a * 0.7f, 54, 260.0f, 520.0f);
+
+    // Radial pulse rings emanating from the title
+    fx::radial_rings(r, {f32(VIRTUAL_W) * 0.5f, 260.0f}, t,
+                     COLOR_CORE_EDGE, a * 0.7f, 3, 640.0f);
+
+    // Ticker along the very bottom, under the bottom bar
+    fx::ticker(r, t, "  >> SYSTEM NOMINAL  //  NO ANOMALIES DETECTED  //  WARDEN SIGNAL STABLE  ",
+               f32(VIRTUAL_H) - 16.0f, 90.0f, COLOR_FACET_EDGE, a * 0.7f);
+
+    // ---- Post-FX, place these LAST ----
+    fx::glitch_slice(r, t, a * 0.9f);
+    fx::noise_bars(r, t, a * 0.55f, 22);
+    fx::film_grain(r, t, a * 0.9f, 420, 1.1f);
+    fx::scanlines(r, a * 0.9f, 4.0f, 42);
+    fx::vignette(r, a * 1.0f, 200.0f, 12);
 }
 
 } // namespace inc
