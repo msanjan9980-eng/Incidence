@@ -8,6 +8,7 @@ namespace inc::render { class Renderer; }
 namespace inc::game {
 
 struct Drone;
+struct Wall;
 
 // ---------------------------------------------------------------------------
 // Projectile — a straight-flying bullet fired by an enemy.
@@ -26,10 +27,10 @@ struct Projectile {
     void step(f32 dt);
     void draw(render::Renderer& r) const;
 
-    // M5: Draw a dotted ghost line showing where this bullet will go,
-    // including reflections off walls and the current drone shield.
-    // Called once per frame from World::draw.
-    void draw_predicted(render::Renderer& r, const Drone& drone) const;
+    // M5: Trajectory preview. M6: Now reflects off interior walls too.
+    void draw_predicted(render::Renderer& r,
+                        const Drone& drone,
+                        const Wall* walls, int wall_count) const;
 };
 
 } // namespace inc::game

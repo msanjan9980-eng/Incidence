@@ -3,31 +3,57 @@
 #include "platform/platform.hpp"
 
 #include <cmath>
+#include <cstdio>
 
 namespace inc::game {
+
+// ---------------------------------------------------------------------------
+// Construction / lifecycle
+// ---------------------------------------------------------------------------
 
 World::World() {
     reset();
 }
 
 void World::reset() {
-    drone_.position = { VIRTUAL_W * 0.5f, VIRTUAL_H * 0.5f };
+    player_hp_    = 3;
+    kills_        = 0;
+    score_        = 0;
+    current_room_ = 0;
+    load_room(0);
+}
+
+void World::load_room(int index) {
+    const Room& r = room_at(index);
+    current_room_ = index;
+
+    // ---- Walls ---------------------------------------------------------
+    wall_count_ = r.wall_count;
+    for (int i = 0; i < wall_count_; ++i) walls_[i] = r.walls[i];
+    for (int i = wall_count_; i < 32; ++i) walls_[i] = Wall{};
+
+    // ---- Turrets -------------------------------------------------------
+    for (auto& t : turrets_) t.alive = false;
+    turret_count_ = 0;
+    for (int i = 0; i < r.turret_count && turret_count_ < 8; ++i) {
+        spawn_turret(r.turrets[i]);
+    }
+
+    // ---- Drone ---------------------------------------------------------
+    drone_.position = r.drone_start;
     drone_.velocity = { 0.0f, 0.0f };
     drone_.heading  = -HALF_PI;
     drone_.spin     = 0.0f;
 
-    player_hp_ = 3;
-    kills_     = 0;
-    score_     = 0;
-
+    // ---- Clear projectiles and flashes ---------------------------------
     for (auto& p : projectiles_) p.alive = false;
     for (auto& f : flashes_)     f.alive = false;
-    for (auto& t : turrets_)     t.alive = false;
-    turret_count_ = 0;
 
-    spawn_turret({ 300.0f, 260.0f });
-    spawn_turret({ VIRTUAL_W - 300.0f, 260.0f });
-    spawn_turret({ VIRTUAL_W * 0.5f, VIRTUAL_H - 220.0f });
+    room_clear_timer_ = -1.0f;
+
+    std::fprintf(stderr, "[world] loaded room %d '%s' (%d turrets, %d walls)\n",
+                 index, r.name, r.turret_count, r.wall_count);
+    std::fflush(stderr);
 }
 
 void World::spawn_turret(Vec2 pos) {
@@ -35,7 +61,7 @@ void World::spawn_turret(Vec2 pos) {
     Turret& t = turrets_[turret_count_++];
     t.pos            = pos;
     t.hp             = 3;
-    t.fire_timer     = 0.0f;
+    t.fire_timer     = 0.6f;      // stagger the first shot
     t.fire_interval  = 2.0f;
     t.bullet_speed   = 350.0f;
     t.alive          = true;
@@ -65,18 +91,22 @@ void World::spawn_flash(Vec2 pos) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Simulation
+// ---------------------------------------------------------------------------
+
 void World::step(f32 dt, const platform::InputState& input) {
     const auto kc = [&](platform::Key k) {
         return input.key_down[static_cast<int>(k)];
     };
 
-    // ---- Player --------------------------------------------------------
+    // ---- 1. Player ------------------------------------------------------
     drone_.step(dt,
                 kc(platform::Key::Left),  kc(platform::Key::Right),
                 kc(platform::Key::Up),    kc(platform::Key::Down),
                 kc(platform::Key::Q),     kc(platform::Key::E));
 
-    // ---- Turrets fire --------------------------------------------------
+    // ---- 2. Turrets fire ------------------------------------------------
     for (int i = 0; i < turret_count_; ++i) {
         Turret& t = turrets_[i];
         if (!t.alive) continue;
@@ -91,23 +121,72 @@ void World::step(f32 dt, const platform::InputState& input) {
         }
     }
 
-    // ---- Projectiles ---------------------------------------------------
+    // ---- 3. Projectiles -------------------------------------------------
     for (auto& p : projectiles_) {
         if (!p.alive) continue;
         p.step(dt);
         resolve_collisions(p);
     }
 
-    // ---- Hit flashes ---------------------------------------------------
+    // ---- 4. Hit flashes -------------------------------------------------
     for (auto& f : flashes_) {
         if (!f.alive) continue;
         f.age += dt;
         if (f.age >= HitFlash::LIFETIME) f.alive = false;
     }
+
+    // ---- 5. Room progression --------------------------------------------
+    if (room_clear_timer_ < 0.0f) {
+        int alive = 0;
+        for (int i = 0; i < turret_count_; ++i) {
+            if (turrets_[i].alive) ++alive;
+        }
+        if (alive == 0) {
+            room_clear_timer_ = 0.0f;
+            std::fprintf(stderr, "[world] room cleared — advancing\n");
+            std::fflush(stderr);
+        }
+    } else {
+        room_clear_timer_ += dt;
+        if (room_clear_timer_ >= 2.0f) {
+            current_room_ = (current_room_ + 1) % ROOM_COUNT;
+            load_room(current_room_);
+        }
+    }
 }
 
+// ---------------------------------------------------------------------------
+// Collision: walls (M6)
+// ---------------------------------------------------------------------------
+bool World::collide_with_walls(Projectile& p) {
+    if (p.bounces >= Projectile::MAX_WALL_BOUNCES) return false;
+
+    for (int i = 0; i < wall_count_; ++i) {
+        Vec2 closest;
+        const f32 d = closest_point_on_segment(p.pos, walls_[i].a, walls_[i].b, closest);
+        if (d >= p.radius) continue;
+
+        // Outward normal (points from wall toward bullet).
+        Vec2 ab = walls_[i].b - walls_[i].a;
+        Vec2 n  = ab.perp().normalized();
+        if ((p.pos - closest).dot(n) < 0.0f) n = -n;
+
+        // Only reflect if the bullet is moving into the wall.
+        if (p.vel.dot(n) >= 0.0f) continue;
+
+        p.vel = reflect(p.vel, n);
+        p.pos = closest + n * (p.radius + 0.5f);
+        ++p.bounces;
+        return true;
+    }
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+// Collision: everything
+// ---------------------------------------------------------------------------
 bool World::resolve_collisions(Projectile& p) {
-    // ---- Wall bounces --------------------------------------------------
+    // ---- Screen boundary ------------------------------------------------
     if (p.bounces < Projectile::MAX_WALL_BOUNCES) {
         bool bounced = false;
         if (p.pos.x < p.radius)              { p.pos.x = p.radius;              p.vel.x = -p.vel.x; bounced = true; }
@@ -124,7 +203,10 @@ bool World::resolve_collisions(Projectile& p) {
         }
     }
 
-    // ---- Shield reflection ---------------------------------------------
+    // ---- Interior walls (M6) --------------------------------------------
+    collide_with_walls(p);
+
+    // ---- Shield reflection ----------------------------------------------
     {
         Vec2 to_bullet = p.pos - drone_.position;
         const f32 dist  = to_bullet.length();
@@ -153,17 +235,14 @@ bool World::resolve_collisions(Projectile& p) {
                     p.pos = drone_.position + dir_out * (Drone::SHIELD_R_OUTER + p.radius + 1.0f);
 
                     ++p.bounces;
-
-                    // M5: visual impact marker at the reflection point.
                     spawn_flash(p.pos);
-
                     return false;
                 }
             }
         }
     }
 
-    // ---- Core hit ------------------------------------------------------
+    // ---- Core hit -------------------------------------------------------
     {
         Vec2 to_bullet = p.pos - drone_.position;
         if (to_bullet.length() < Drone::CORE_RADIUS + p.radius) {
@@ -176,7 +255,7 @@ bool World::resolve_collisions(Projectile& p) {
         }
     }
 
-    // ---- Turret hits ---------------------------------------------------
+    // ---- Turret hits ----------------------------------------------------
     for (int i = 0; i < turret_count_; ++i) {
         Turret& t = turrets_[i];
         if (!t.alive) continue;
@@ -188,7 +267,6 @@ bool World::resolve_collisions(Projectile& p) {
                 t.alive = false;
                 kills_++;
 
-                // M5: score scaled by bounce count.
                 const int b = (p.bounces < 6) ? p.bounces : 6;
                 score_ += 100 * (1 << b);
             }
@@ -199,8 +277,11 @@ bool World::resolve_collisions(Projectile& p) {
     return false;
 }
 
+// ---------------------------------------------------------------------------
+// Drawing
+// ---------------------------------------------------------------------------
 void World::draw(render::Renderer& r) const {
-    // ---- Room boundary -------------------------------------------------
+    // ---- Room boundary --------------------------------------------------
     constexpr f32 W = VIRTUAL_W;
     constexpr f32 H = VIRTUAL_H;
     constexpr f32 T = 3.0f;
@@ -209,36 +290,43 @@ void World::draw(render::Renderer& r) const {
     r.draw_line({ W - T, H - T }, { T, H - T }, T, COLOR_WALL_EDGE);
     r.draw_line({ T, H - T }, { T, T }, T, COLOR_WALL_EDGE);
 
-    // ---- Trajectory previews (drawn UNDER everything else) -------------
-    for (const auto& p : projectiles_) {
-        p.draw_predicted(r, drone_);
+    // ---- Interior walls -------------------------------------------------
+    for (int i = 0; i < wall_count_; ++i) {
+        const Wall& w = walls_[i];
+        r.draw_line(w.a, w.b, 12.0f, COLOR_WALL_FILL);
+        r.draw_line(w.a, w.b,  5.0f, COLOR_WALL_EDGE);
     }
 
-    // ---- Hit flashes (drawn over the preview, under entities) ----------
+    // ---- Trajectory previews --------------------------------------------
+    for (const auto& p : projectiles_) {
+        p.draw_predicted(r, drone_, walls_, wall_count_);
+    }
+
+    // ---- Hit flashes ----------------------------------------------------
     for (const auto& f : flashes_) {
         if (!f.alive) continue;
-        const f32 t = f.age / HitFlash::LIFETIME;   // 0..1
+        const f32 t = f.age / HitFlash::LIFETIME;
         const f32 radius  = 4.0f + t * 26.0f;
-        const f32 a_alpha = (1.0f - t);
+        const f32 a_alpha = 1.0f - t;
         const u8  a = u8(clamp(a_alpha, 0.0f, 1.0f) * 255.0f);
         r.draw_ring(f.pos, radius, radius + 3.0f, with_alpha(COLOR_HIT_FLASH, a), 20);
     }
 
-    // ---- Turrets -------------------------------------------------------
+    // ---- Turrets --------------------------------------------------------
     for (int i = 0; i < turret_count_; ++i) {
         turrets_[i].draw(r);
     }
 
-    // ---- Projectiles ---------------------------------------------------
+    // ---- Projectiles ----------------------------------------------------
     for (const auto& p : projectiles_) {
         p.draw(r);
     }
 
-    // ---- Drone ---------------------------------------------------------
+    // ---- Drone ----------------------------------------------------------
     drone_.draw(r);
 
-    // ---- HUD -----------------------------------------------------------
-    // HP — top-left.
+    // ---- HUD ------------------------------------------------------------
+    // HP — top-left cyan squares.
     for (int i = 0; i < player_hp_; ++i) {
         const f32 x = 30.0f + f32(i) * 26.0f;
         const f32 y = 30.0f;
@@ -249,7 +337,7 @@ void World::draw(render::Renderer& r) const {
                     COLOR_CORE_EDGE);
     }
 
-    // Kills — red squares below HP.
+    // Kills — small red squares.
     for (int i = 0; i < kills_; ++i) {
         const f32 x = 30.0f + f32(i) * 16.0f;
         const f32 y = 56.0f;
@@ -266,31 +354,62 @@ void World::draw(render::Renderer& r) const {
         constexpr f32 BAR_Y = 30.0f;
         constexpr f32 BAR_W = 300.0f;
         constexpr f32 BAR_H = 12.0f;
-        constexpr f32 SCORE_MAX = 10000.0f;
+        constexpr f32 SCORE_MAX = 20000.0f;
 
-        // Background channel.
         r.draw_quad({ BAR_X,           BAR_Y           },
                     { BAR_X + BAR_W,   BAR_Y           },
                     { BAR_X + BAR_W,   BAR_Y + BAR_H   },
                     { BAR_X,           BAR_Y + BAR_H   },
                     with_alpha(COLOR_SCORE_BAR, 40));
 
-        // Fill.
         const f32 fill_w = BAR_W * clamp(f32(score_) / SCORE_MAX, 0.0f, 1.0f);
         if (fill_w > 0.5f) {
-            r.draw_quad({ BAR_X,         BAR_Y         },
-                        { BAR_X + fill_w, BAR_Y        },
-                        { BAR_X + fill_w, BAR_Y + BAR_H },
-                        { BAR_X,         BAR_Y + BAR_H },
+            r.draw_quad({ BAR_X,             BAR_Y           },
+                        { BAR_X + fill_w,    BAR_Y           },
+                        { BAR_X + fill_w,    BAR_Y + BAR_H   },
+                        { BAR_X,             BAR_Y + BAR_H   },
                         COLOR_SCORE_BAR);
         }
 
-        // Tick marks at 25 / 50 / 75 %.
         for (int i = 1; i <= 3; ++i) {
             const f32 tx = BAR_X + BAR_W * f32(i) * 0.25f;
             r.draw_line({ tx, BAR_Y - 3 }, { tx, BAR_Y + BAR_H + 3 },
                         1.5f, COLOR_SCORE_TICK);
         }
+    }
+
+    // Room indicator — top-center row of markers.
+    {
+        constexpr f32 CX = VIRTUAL_W * 0.5f;
+        constexpr f32 CY = 40.0f;
+        constexpr f32 SPACING = 24.0f;
+        constexpr f32 R = 6.0f;
+        const f32 start_x = CX - f32(ROOM_COUNT - 1) * SPACING * 0.5f;
+
+        for (int i = 0; i < ROOM_COUNT; ++i) {
+            const Vec2 c { start_x + f32(i) * SPACING, CY };
+
+            if (i < current_room_) {
+                // Completed — filled dim cyan.
+                r.draw_circle(c, R, with_alpha(COLOR_CORE_EDGE, 140), 12);
+            } else if (i == current_room_) {
+                // Current — filled bright cyan, plus outer ring.
+                r.draw_circle(c, R, COLOR_CORE_EDGE, 12);
+                r.draw_ring(c, R + 2.0f, R + 4.0f, COLOR_CORE_INNER, 16);
+            } else {
+                // Pending — outline only.
+                r.draw_ring(c, R - 1.0f, R, with_alpha(COLOR_CORE_EDGE, 100), 12);
+            }
+        }
+    }
+
+    // Room-clear pulse — a bright ring expanding from the drone's position.
+    if (room_clear_timer_ >= 0.0f) {
+        const f32 t = clamp(room_clear_timer_ / 2.0f, 0.0f, 1.0f);
+        const f32 radius = 30.0f + t * 700.0f;
+        const u8  a = u8((1.0f - t) * 200.0f);
+        r.draw_ring(drone_.position, radius - 4.0f, radius + 4.0f,
+                    with_alpha(COLOR_CORE_INNER, a), 40);
     }
 }
 

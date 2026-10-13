@@ -1,5 +1,6 @@
 ﻿#include "game/projectile.hpp"
 #include "game/drone.hpp"
+#include "game/room.hpp"
 #include "render/renderer.hpp"
 
 #include <cmath>
@@ -31,40 +32,45 @@ void Projectile::draw(render::Renderer& r) const {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Trajectory preview — the signature feature.
-//
-// Simulates a *copy* of this bullet forward in time, reflecting off walls
-// and (using the drone's CURRENT heading) the shield. Draws a dotted line
-// of every Nth position. Because the shield reflection uses the current
-// heading, rotating with Q/E causes the predicted path to swing in real
-// time. That is the moment the game teaches the player reflection geometry.
-//
-// The simulation matches the real simulation's dt and constants exactly,
-// so the ghost line is a truthful prediction of what will happen if the
-// player does not change anything.
-// ---------------------------------------------------------------------------
-void Projectile::draw_predicted(render::Renderer& r, const Drone& drone) const {
+void Projectile::draw_predicted(render::Renderer& r,
+                                const Drone& drone,
+                                const Wall* walls, int wall_count) const {
     if (!alive) return;
 
-    // Local mutable copies. We never touch this projectile's actual state.
     Vec2 sim_pos = pos;
     Vec2 sim_vel = vel;
 
-    constexpr f32 DT         = FIXED_DT;
-    constexpr int MAX_STEPS  = 240;    // 2 seconds of preview
-    constexpr int MAX_BOUNCE = 4;
-    constexpr f32 DOT_SPACING = 34.0f; // virtual pixels between dots
+    constexpr f32 DT          = FIXED_DT;
+    constexpr int MAX_STEPS   = 360;
+    constexpr int MAX_BOUNCE  = 6;
+    constexpr f32 DOT_SPACING = 34.0f;
 
-    int  bounces       = 0;
-    f32  since_last    = DOT_SPACING;  // draw a dot on the first step
+    int  bounces       = this->bounces;
+    f32  since_last    = DOT_SPACING;
     bool alive_preview = true;
+
+    auto bounce_off = [&](Vec2 wa, Vec2 wb) -> bool {
+        Vec2 closest;
+        const f32 d = closest_point_on_segment(sim_pos, wa, wb, closest);
+        if (d >= radius) return false;
+
+        Vec2 ab = wb - wa;
+        Vec2 n  = ab.perp().normalized();
+        if ((sim_pos - closest).dot(n) < 0.0f) n = -n;
+        if (sim_vel.dot(n) >= 0.0f) return false;
+
+        sim_vel = reflect(sim_vel, n);
+        sim_pos = closest + n * (radius + 0.5f);
+        ++bounces;
+        since_last = DOT_SPACING;
+        return true;
+    };
 
     for (int i = 0; i < MAX_STEPS && alive_preview; ++i) {
         sim_pos += sim_vel * DT;
         since_last += sim_vel.length() * DT;
 
-        // ---- Wall bounce --------------------------------------------------
+        // ---- Screen edge bounce ------------------------------------------
         if (bounces < MAX_BOUNCE) {
             bool hit = false;
             if (sim_pos.x < radius)              { sim_pos.x = radius;              sim_vel.x = -sim_vel.x; hit = true; }
@@ -80,7 +86,14 @@ void Projectile::draw_predicted(render::Renderer& r, const Drone& drone) const {
             }
         }
 
-        // ---- Shield reflection --------------------------------------------
+        // ---- Interior wall bounce ----------------------------------------
+        if (bounces < MAX_BOUNCE) {
+            for (int w = 0; w < wall_count; ++w) {
+                bounce_off(walls[w].a, walls[w].b);
+            }
+        }
+
+        // ---- Shield reflection -------------------------------------------
         {
             Vec2 to_b = sim_pos - drone.position;
             const f32 dist = to_b.length();
@@ -101,30 +114,28 @@ void Projectile::draw_predicted(render::Renderer& r, const Drone& drone) const {
                         Vec2 dir_out = (dist < 1e-3f) ? Vec2{1,0} : to_b * (1.0f / dist);
                         sim_pos = drone.position + dir_out * (Drone::SHIELD_R_OUTER + radius + 1.0f);
                         ++bounces;
-                        since_last = DOT_SPACING;   // draw a dot right at the bounce
+                        since_last = DOT_SPACING;
                     }
                 }
             }
         }
 
-        // ---- Core / turret-terminating checks -----------------------------
+        // ---- Terminate on core impact ------------------------------------
         {
             Vec2 to_c = sim_pos - drone.position;
             if (to_c.length() < Drone::CORE_RADIUS + radius) {
-                // Impact on core — stop here.
                 alive_preview = false;
             }
         }
 
-        // ---- Draw a dot at the appropriate spacing ------------------------
+        // ---- Drop a dot --------------------------------------------------
         if (since_last >= DOT_SPACING) {
             since_last = 0.0f;
-            // Hot dots near the shield, cool dots elsewhere.
             const f32 dist_to_drone = (sim_pos - drone.position).length();
             const Color dot_color = (dist_to_drone < Drone::SHIELD_R_OUTER + 40.0f)
                 ? COLOR_GHOST_DOT_HOT
                 : COLOR_GHOST_DOT;
-            r.draw_circle(sim_pos, 2.2f, dot_color, 6);
+            r.draw_circle(sim_pos, 2.4f, dot_color, 6);
         }
 
         if (bounces >= MAX_BOUNCE + 2) {
