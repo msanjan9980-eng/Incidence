@@ -8,6 +8,7 @@
 #include "render/drone_fx.hpp"
 #include "game/profile.hpp"
 #include "render/levelup_fx.hpp"
+#include "render/room_ambient.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -773,6 +774,7 @@ bool World::resolve_collisions(Projectile& p) {
 
 void World::draw(render::Renderer& r) const {
     r.set_view_offset(effects_.shake_offset);
+    room_ambient::draw_ambient(r, current_room_, f32(platform::time_seconds()));
     r.set_layer(render::Renderer::Layer::Alpha);
 
     constexpr f32 W = VIRTUAL_W;
