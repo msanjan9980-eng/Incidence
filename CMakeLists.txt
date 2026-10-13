@@ -17,9 +17,6 @@ endif()
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
-# ---------------------------------------------------------------------------
-# Compiler flags
-# ---------------------------------------------------------------------------
 set(INCIDENCE_CXX_FLAGS "")
 if(MSVC)
     list(APPEND INCIDENCE_CXX_FLAGS
@@ -39,21 +36,15 @@ if(NOT MSVC)
                                   -fno-fast-math -ffp-contract=off)
 endif()
 
-# ---------------------------------------------------------------------------
-# sokol
-# ---------------------------------------------------------------------------
 include(cmake/sokol.cmake)
 
-# ---------------------------------------------------------------------------
-# Main target
-# ---------------------------------------------------------------------------
 add_executable(incidence
     src/main.cpp
     src/sokol_impl.c
     src/app/app.cpp
     src/platform/platform.cpp
     src/render/renderer.cpp
-    src/game/triangle.cpp)
+    src/game/drone.cpp)
 
 target_include_directories(incidence PRIVATE
     ${CMAKE_SOURCE_DIR}/src
@@ -64,7 +55,7 @@ set_source_files_properties(
     src/app/app.cpp
     src/platform/platform.cpp
     src/render/renderer.cpp
-    src/game/triangle.cpp
+    src/game/drone.cpp
     PROPERTIES COMPILE_OPTIONS "${INCIDENCE_CXX_FLAGS}")
 
 set_source_files_properties(

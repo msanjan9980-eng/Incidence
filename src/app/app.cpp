@@ -68,16 +68,16 @@ void App::step(f32 dt) {
         return in.key_down[static_cast<int>(k)];
     };
 
-    triangle_.step(dt,
-                   kc(platform::Key::Left),  kc(platform::Key::Right),
-                   kc(platform::Key::Up),    kc(platform::Key::Down),
-                   kc(platform::Key::Q),     kc(platform::Key::E));
+    drone_.step(dt,
+                kc(platform::Key::Left),  kc(platform::Key::Right),
+                kc(platform::Key::Up),    kc(platform::Key::Down),
+                kc(platform::Key::Q),     kc(platform::Key::E));
 }
 
 void App::render() {
     renderer_.begin_frame(platform::window_width(),
                           platform::window_height());
-    triangle_.draw(renderer_);
+    drone_.draw(renderer_);
     renderer_.end_frame();
 }
 

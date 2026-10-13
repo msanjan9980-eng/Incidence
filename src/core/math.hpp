@@ -11,11 +11,16 @@ namespace inc {
 // one float type; mixing double into the sim would break per-platform replay
 // across compilers.
 // ---------------------------------------------------------------------------
-using f32 = float;
-using f64 = double;
-using i32 = std::int32_t;
+using u8  = std::uint8_t;
+using u16 = std::uint16_t;
 using u32 = std::uint32_t;
 using u64 = std::uint64_t;
+using i8  = std::int8_t;
+using i16 = std::int16_t;
+using i32 = std::int32_t;
+using i64 = std::int64_t;
+using f32 = float;
+using f64 = double;
 
 inline constexpr f32 PI       = 3.14159265358979323846f;
 inline constexpr f32 TAU      = PI * 2.0f;

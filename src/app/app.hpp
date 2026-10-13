@@ -3,7 +3,7 @@
 #include "core/math.hpp"
 #include "platform/platform.hpp"
 #include "render/renderer.hpp"
-#include "game/triangle.hpp"
+#include "game/drone.hpp"
 
 namespace inc {
 
@@ -32,7 +32,7 @@ private:
     u64    frame_count_   = 0;
 
     render::Renderer  renderer_;
-    game::Triangle    triangle_;
+    game::Drone       drone_;
 };
 
 } // namespace inc
