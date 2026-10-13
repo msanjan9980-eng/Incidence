@@ -5,6 +5,8 @@
 #include "render/renderer.hpp"
 #include "game/world.hpp"
 #include "game/screen.hpp"
+#include "game/log.hpp"
+#include "game/quest.hpp"
 
 namespace inc {
 
@@ -37,6 +39,11 @@ private:
     void draw_character_sheet(render::Renderer& r) const;
     void draw_skill_tree(render::Renderer& r) const;
     void draw_equipment_panel(render::Renderer& r) const;
+    void draw_log_overlay(render::Renderer& r) const;
+    void draw_log_archive(render::Renderer& r) const;
+    void draw_quest_log(render::Renderer& r) const;
+
+    void check_quests();
 
     bool   running_       = true;
     double accumulator_   = 0.0;
@@ -55,9 +62,16 @@ private:
     bool          character_sheet_open_ = false;
     bool          skill_tree_open_      = false;
     bool          equipment_panel_open_ = false;
+    bool          log_archive_open_     = false;
+    bool          quest_log_open_       = false;
+
     int           skill_cursor_branch_  = 0;
     int           skill_cursor_row_     = 0;
     int           equipment_slot_       = 0;
+    int           archive_cursor_       = 0;
+
+    game::LogState    logs_;
+    game::QuestState  quests_;
 
     render::Renderer  renderer_;
     game::World       world_;

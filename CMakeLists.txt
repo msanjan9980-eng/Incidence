@@ -42,28 +42,8 @@ add_executable(incidence
     src/main.cpp
     src/sokol_impl.c
     src/app/app.cpp
-    src/platform/platform.cpp
-    src/render/renderer.cpp
-    src/audio/audio.cpp
-    src/game/drone.cpp
-    src/game/projectile.cpp
-    src/game/turret.cpp
-    src/game/world.cpp
-    src/game/room.cpp
-    src/game/warden.cpp
-    src/game/character.cpp
-    src/game/save.cpp
-    src/game/skill.cpp
-    src/game/equipment.cpp
-    src/game/inventory.cpp)
-
-target_include_directories(incidence PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
-    ${SOKOL_INCLUDE_DIR})
-
-set_source_files_properties(
-    src/main.cpp
-    src/app/app.cpp
+    src/app/app_intro.cpp
+    src/app/app_panels.cpp
     src/platform/platform.cpp
     src/render/renderer.cpp
     src/audio/audio.cpp
@@ -78,6 +58,34 @@ set_source_files_properties(
     src/game/skill.cpp
     src/game/equipment.cpp
     src/game/inventory.cpp
+    src/game/log.cpp
+    src/game/quest.cpp)
+
+target_include_directories(incidence PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${SOKOL_INCLUDE_DIR})
+
+set_source_files_properties(
+    src/main.cpp
+    src/app/app.cpp
+    src/app/app_intro.cpp
+    src/app/app_panels.cpp
+    src/platform/platform.cpp
+    src/render/renderer.cpp
+    src/audio/audio.cpp
+    src/game/drone.cpp
+    src/game/projectile.cpp
+    src/game/turret.cpp
+    src/game/world.cpp
+    src/game/room.cpp
+    src/game/warden.cpp
+    src/game/character.cpp
+    src/game/save.cpp
+    src/game/skill.cpp
+    src/game/equipment.cpp
+    src/game/inventory.cpp
+    src/game/log.cpp
+    src/game/quest.cpp
     PROPERTIES COMPILE_OPTIONS "${INCIDENCE_CXX_FLAGS}")
 
 set_source_files_properties(

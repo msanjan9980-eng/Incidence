@@ -1,15 +1,15 @@
-#include "game/world.hpp"
+﻿#include "game/world.hpp"
 #include "render/renderer.hpp"
 #include "platform/platform.hpp"
 #include "audio/audio.hpp"
 #include "game/save.hpp"
+#include "game/log.hpp"
 
 #include <cmath>
 #include <cstdio>
 
 namespace inc::game {
 
-// Skill helper functions.
 static f32 reflect_speed_mult(const Character& ch) {
     f32 m = 1.0f;
     if (ch.has_skill(SkillId::HeavyShot))   m *= 0.75f;
@@ -51,6 +51,7 @@ void World::reset() {
     victory_screen_timer_ = 0.0f;
     levelup_banner_timer_ = 0.0f;
     levelup_banner_level_ = 1;
+    pending_log_trigger_  = -1;
     load_room(0);
 }
 
@@ -105,6 +106,7 @@ void World::spawn_warden() {
     warden_active_ = true;
     for (auto& p : projectiles_) p.alive = false;
     for (auto& f : flashes_)     f.alive = false;
+    pending_log_trigger_ = 9;
     std::fprintf(stderr, "[world] WARDEN OF MIRROR engaged\n");
     std::fflush(stderr);
 }
@@ -288,6 +290,9 @@ void World::step(f32 dt, const platform::InputState& input) {
         }
         if (alive_count == 0) {
             room_clear_timer_ = 0.0f;
+            if (current_room_ < LOG_COUNT) {
+                pending_log_trigger_ = current_room_;
+            }
             std::fprintf(stderr, "[world] room cleared - advancing\n");
             std::fflush(stderr);
         }
@@ -297,7 +302,6 @@ void World::step(f32 dt, const platform::InputState& input) {
             if (current_room_ == ROOM_COUNT - 1) {
                 spawn_warden();
             } else {
-                // Equipment unlocks at room milestones.
                 if (current_room_ == 2) {
                     character_.inventory.unlock(FacetId::Wide);
                     character_.inventory.unlock(CoreId::Coral);
@@ -428,6 +432,7 @@ bool World::resolve_warden_collisions(Projectile& p) {
             kills_++;
             score_ += 5000;
             warden_defeated_ = true;
+            pending_log_trigger_ = 10;
             audio::play_victory();
             const int gained = character_.add_xp(2500);
             if (gained > 0) {

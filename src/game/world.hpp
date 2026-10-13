@@ -44,6 +44,9 @@ public:
     [[nodiscard]] Character&       character()       noexcept { return character_; }
     [[nodiscard]] const Character& character() const noexcept { return character_; }
 
+    [[nodiscard]] int  pending_log_trigger() const noexcept { return pending_log_trigger_; }
+    void clear_pending_log_trigger() noexcept { pending_log_trigger_ = -1; }
+
 private:
     void load_room(int index);
     void spawn_turret(const EnemySpawn& spawn);
@@ -61,7 +64,6 @@ private:
 
     void award_kill_xp(EnemyType type);
 
-    // ---- Content ------------------------------------------------------
     Drone      drone_;
     Turret     turrets_[8];
     Projectile projectiles_[256];
@@ -75,7 +77,6 @@ private:
     int        current_room_   = 0;
     bool       warden_active_  = false;
 
-    // ---- Player state -------------------------------------------------
     int  player_hp_ = 3;
     int  kills_     = 0;
     i32  score_     = 0;
@@ -89,9 +90,10 @@ private:
     f32  victory_screen_timer_= 0.0f;
     f32  last_incidence_deg_  = 0.0f;
 
-    // ---- Level-up banner ----------------------------------------------
     f32  levelup_banner_timer_ = 0.0f;
     int  levelup_banner_level_ = 1;
+
+    int  pending_log_trigger_ = -1;
 };
 
 } // namespace inc::game
