@@ -536,6 +536,7 @@ void App::render() {
         break;
     case game::Screen::Playing:
         world_.draw(renderer_);
+        draw_gameplay_hud(renderer_);
         if (character_sheet_open_) draw_character_sheet(renderer_);
         if (skill_tree_open_)      draw_skill_tree(renderer_);
         if (equipment_panel_open_) draw_equipment_panel(renderer_);

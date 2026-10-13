@@ -35,6 +35,7 @@ private:
     void draw_victory(render::Renderer& r) const;
     void draw_room_intro(render::Renderer& r) const;
     void draw_main_menu(render::Renderer& r) const;
+    void draw_gameplay_hud(render::Renderer& r) const;
 
     void draw_intro(render::Renderer& r) const;
     void draw_intro_background(render::Renderer& r,
