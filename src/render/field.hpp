@@ -153,10 +153,10 @@ inline void orbiting_cloud(render::Renderer& r, Vec2 center, f32 t,
     for (int i = 0; i < count; ++i) {
         const u32 s = u32(i) * 40503u;
         const f32 ang = fhash(s) * TAU;
-        const f32 r   = r_min + (r_max - r_min) * fhash(s + 1u);
+        const f32 rr  = r_min + (r_max - r_min) * fhash(s + 1u);
         const f32 w   = (fhash(s + 2u) - 0.5f) * 0.55f;
         const f32 a   = ang + t * w;
-        const Vec2 p {center.x + std::cos(a) * r, center.y + std::sin(a) * r * 0.45f};
+        const Vec2 p {center.x + std::cos(a) * rr, center.y + std::sin(a) * rr * 0.45f};
         const f32 tw  = 0.5f + 0.5f * std::sin(t * 1.7f + fhash(s + 3u) * 6.28f);
         const u8 al = u8(alpha * (30.0f + 70.0f * tw));
         r.draw_circle(p, 1.2f + tw * 1.4f, with_alpha(color, al), 6);

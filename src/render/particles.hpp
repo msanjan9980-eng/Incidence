@@ -72,8 +72,9 @@ public:
             const f32 k = 1.0f - (p.life / p.max_life);
             const f32 kk = 1.0f - k;
             const f32 size = p.size0 + (p.size1 - p.size0) * k;
-            const Color c = lerp_color(p.col0, p.col1, k);
-            const u8 a = u8(f32(c.a) * kk);
+            // Color is a packed u32; alpha is the low byte.
+            const Color c = (k < 0.5f) ? p.col0 : p.col1;
+            const u8 a = u8(f32(c & 0xFFu) * kk);
             switch (p.kind) {
                 case ParticleKind::Dot:
                     r.draw_quad({p.pos.x - size, p.pos.y - size},
@@ -186,18 +187,5 @@ private:
     int      cursor_        = 0;
     f32      stream_accum_  = 0.0f;
 };
-
-// ---------------------------------------------------------------------------
-// Color lerp helper (linear in RGBA).
-// ---------------------------------------------------------------------------
-[[nodiscard]] inline Color lerp_color(Color a, Color b, f32 t) {
-    t = clamp(t, 0.0f, 1.0f);
-    return Color {
-        u8(f32(a.r) + (f32(b.r) - f32(a.r)) * t),
-        u8(f32(a.g) + (f32(b.g) - f32(a.g)) * t),
-        u8(f32(a.b) + (f32(b.b) - f32(a.b)) * t),
-        u8(f32(a.a) + (f32(b.a) - f32(a.a)) * t),
-    };
-}
 
 } // namespace inc::fx
