@@ -21,23 +21,11 @@ struct HitFlash {
     static constexpr f32 LIFETIME = 0.35f;
 };
 
-// ---------------------------------------------------------------------------
-// World — the entire game state.
-//
-// Owns the drone, the current room's walls and turrets, the projectile pool,
-// and the hit-flash pool. Handles:
-//   - stepping every entity,
-//   - reflection + collision (walls, shield, core, turrets),
-//   - room loading and progression,
-//   - the HUD.
-// ---------------------------------------------------------------------------
 class World {
 public:
     World();
 
-    // Restart the entire run from room 0.
     void reset();
-
     void step(f32 dt, const platform::InputState& input);
     void draw(render::Renderer& r) const;
 
@@ -49,8 +37,10 @@ public:
 
 private:
     void load_room(int index);
-    void spawn_turret(Vec2 pos);
-    void spawn_bullet(Vec2 pos, Vec2 dir, f32 speed);
+    void spawn_turret(const EnemySpawn& spawn);
+    void spawn_bullet(Vec2 pos, Vec2 dir, f32 speed,
+                      int wall_bounces,
+                      Color core_c, Color glow_c);
     void spawn_flash(Vec2 pos);
 
     bool resolve_collisions(Projectile& p);
@@ -72,8 +62,7 @@ private:
     int  kills_     = 0;
     i32  score_     = 0;
 
-    // ---- Room progression -----------------------------------------------
-    f32  room_clear_timer_ = -1.0f;   // -1 = not counting
+    f32  room_clear_timer_ = -1.0f;
 
     f32  last_incidence_deg_ = 0.0f;
 };
