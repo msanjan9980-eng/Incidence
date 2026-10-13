@@ -6,6 +6,7 @@
 #include "game/save.hpp"
 #include "game/room.hpp"
 #include "render/drone_fx.hpp"
+#include "game/profile.hpp"
 #include "render/levelup_fx.hpp"
 
 #include <cmath>
@@ -245,7 +246,7 @@ void World::award_kill_xp(EnemyType type) {
     if (gained > 0) {
         levelup_banner_timer_ = 2.0f;
         levelup_banner_level_ = character_.level;
-        save_game("save.sav", character_, current_room_, rooms_visited_);
+        profile_save_active(character_, current_room_, rooms_visited_);
         effects_.add_flash(COLOR_CORE_INNER, 0.30f);
         effects_.add_hitstop(0.06f);
         const f32 lev_cy = f32(VIRTUAL_H) * 0.42f;
@@ -566,7 +567,7 @@ bool World::resolve_warden_collisions(Projectile& p) {
                 levelup_banner_timer_ = 2.0f;
                 levelup_banner_level_ = character_.level;
             }
-            save_game("save.sav", character_, current_room_, rooms_visited_);
+            profile_save_active(character_, current_room_, rooms_visited_);
             std::fprintf(stderr, "[world] WARDEN DEFEATED\n");
             std::fflush(stderr);
         }
