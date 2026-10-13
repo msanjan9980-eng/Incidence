@@ -71,7 +71,7 @@ private:
     int  vert_count_ = 0;
 
     struct Batch { int start; int count; Layer layer; };
-    static constexpr int MAX_BATCHES = 8;
+    static constexpr int MAX_BATCHES = 32;
     Batch batches_[MAX_BATCHES];
     int   batch_count_         = 0;
     int   current_batch_start_ = 0;

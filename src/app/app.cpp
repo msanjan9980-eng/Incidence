@@ -555,11 +555,9 @@ void App::draw_victory(render::Renderer& r) const {
 
 void App::draw_room_intro(render::Renderer& r) const {
     const f32 elapsed = ROOM_INTRO_TOTAL - room_intro_timer_;
-
     f32 alpha = 1.0f;
-    if (elapsed < ROOM_INTRO_FADE_IN) {
-        alpha = elapsed / ROOM_INTRO_FADE_IN;
-    } else if (elapsed > ROOM_INTRO_FADE_IN + ROOM_INTRO_HOLD) {
+    if (elapsed < ROOM_INTRO_FADE_IN) alpha = elapsed / ROOM_INTRO_FADE_IN;
+    else if (elapsed > ROOM_INTRO_FADE_IN + ROOM_INTRO_HOLD) {
         const f32 out = elapsed - ROOM_INTRO_FADE_IN - ROOM_INTRO_HOLD;
         alpha = 1.0f - out / ROOM_INTRO_FADE_OUT;
     }
@@ -575,10 +573,8 @@ void App::draw_room_intro(render::Renderer& r) const {
     const f32 enter = clamp(elapsed / 0.35f, 0.0f, 1.0f);
     const f32 ease  = 1.0f - (1.0f - enter) * (1.0f - enter);
     const f32 exit_t = clamp((elapsed - (ROOM_INTRO_FADE_IN + ROOM_INTRO_HOLD)) / ROOM_INTRO_FADE_OUT, 0.0f, 1.0f);
-    const f32 exit_e = exit_t * exit_t;
-    const f32 slide_y = (1.0f - ease) * 70.0f - exit_e * 50.0f;
+    const f32 slide_y = (1.0f - ease) * 70.0f - exit_t * exit_t * 50.0f;
 
-    // Dim + boss-tinted backdrop
     r.set_layer(render::Renderer::Layer::Alpha);
     r.draw_quad({0,0}, {VIRTUAL_W,0}, {VIRTUAL_W,VIRTUAL_H}, {0,VIRTUAL_H},
                 rgba(2, 6, 12, u8(alpha * (boss ? 200 : 150))));
@@ -590,8 +586,8 @@ void App::draw_room_intro(render::Renderer& r) const {
         r.set_layer(render::Renderer::Layer::Alpha);
     }
 
-    const f32 card_w = 1100.0f;
-    const f32 card_h = 300.0f;
+    const f32 card_w = 1150.0f;
+    const f32 card_h = 320.0f;
     const f32 card_cx = VIRTUAL_W * 0.5f;
     const f32 card_cy = VIRTUAL_H * 0.5f + slide_y;
     const f32 card_x0 = card_cx - card_w * 0.5f;
@@ -599,19 +595,33 @@ void App::draw_room_intro(render::Renderer& r) const {
     const f32 card_x1 = card_x0 + card_w;
     const f32 card_y1 = card_y0 + card_h;
 
-    // Drop shadow
-    r.draw_quad({card_x0 + 12, card_y0 + 12}, {card_x1 + 12, card_y0 + 12},
-                {card_x1 + 12, card_y1 + 12}, {card_x0 + 12, card_y1 + 12},
-                rgba(0,0,0, u8(alpha * 180.0f)));
+    // Layered shadows (soft far, tight near)
+    r.draw_quad({card_x0 + 22, card_y0 + 22}, {card_x1 + 22, card_y0 + 22},
+                {card_x1 + 22, card_y1 + 22}, {card_x0 + 22, card_y1 + 22},
+                rgba(0, 0, 0, u8(alpha * 100)));
+    r.draw_quad({card_x0 + 10, card_y0 + 10}, {card_x1 + 10, card_y0 + 10},
+                {card_x1 + 10, card_y1 + 10}, {card_x0 + 10, card_y1 + 10},
+                rgba(0, 0, 0, u8(alpha * 180)));
 
-    // Card fill
+    // Card body: two-tone gradient
     r.draw_quad({card_x0, card_y0}, {card_x1, card_y0},
                 {card_x1, card_y1}, {card_x0, card_y1},
-                rgba(8, 22, 32, u8(alpha * 245.0f)));
+                rgba(6, 18, 28, u8(alpha * 245)));
+    r.draw_quad({card_x0, card_y0}, {card_x1, card_y0},
+                {card_x1, card_y0 + card_h * 0.28f}, {card_x0, card_y0 + card_h * 0.28f},
+                rgba(10, 26, 38, u8(alpha * 220)));
+
+    // Diagonal hatch
+    for (int i = 0; i < 24; ++i) {
+        const f32 hx  = card_x0 + f32(i) * 60.0f - card_h;
+        const f32 hx2 = hx + card_h;
+        r.draw_line({hx, card_y1}, {hx2, card_y0}, 1.0f,
+                    with_alpha(accent, u8(alpha * 10)));
+    }
 
     // Corner-notched border
-    const f32 n = 26.0f;
-    const Color border = with_alpha(accent, u8(200 * alpha));
+    const f32 n = 30.0f;
+    const Color border = with_alpha(accent, u8(180 * alpha));
     r.draw_line({card_x0 + n, card_y0}, {card_x1 - n, card_y0}, 2.0f, border);
     r.draw_line({card_x1, card_y0 + n}, {card_x1, card_y1 - n}, 2.0f, border);
     r.draw_line({card_x1 - n, card_y1}, {card_x0 + n, card_y1}, 2.0f, border);
@@ -624,78 +634,104 @@ void App::draw_room_intro(render::Renderer& r) const {
     r.draw_line({card_x0, card_y1}, {card_x0, card_y1 - n}, 3.0f, accent_hi);
     r.draw_line({card_x1, card_y1}, {card_x1 - n, card_y1}, 3.0f, accent_hi);
     r.draw_line({card_x1, card_y1}, {card_x1, card_y1 - n}, 3.0f, accent_hi);
+    r.draw_circle({card_x0 + 14, card_y0 + 14}, 3.0f, accent_hi, 10);
+    r.draw_circle({card_x1 - 14, card_y0 + 14}, 3.0f, accent_hi, 10);
+    r.draw_circle({card_x0 + 14, card_y1 - 14}, 3.0f, accent_hi, 10);
+    r.draw_circle({card_x1 - 14, card_y1 - 14}, 3.0f, accent_hi, 10);
 
-    // Left accent strip
-    r.draw_quad({card_x0 + 20, card_y0 + 20},
-                {card_x0 + 28, card_y0 + 20},
-                {card_x0 + 28, card_y1 - 20},
-                {card_x0 + 20, card_y1 - 20},
+    // Dual left accent strips
+    r.draw_quad({card_x0 + 22, card_y0 + 22}, {card_x0 + 32, card_y0 + 22},
+                {card_x0 + 32, card_y1 - 22}, {card_x0 + 22, card_y1 - 22},
                 with_alpha(accent, u8(220 * alpha)));
+    r.draw_quad({card_x0 + 38, card_y0 + 22}, {card_x0 + 41, card_y0 + 22},
+                {card_x0 + 41, card_y1 - 22}, {card_x0 + 38, card_y1 - 22},
+                with_alpha(accent, u8(140 * alpha)));
 
-    // Header line "ROOM 03 / SECTOR" with letter-spacing reveal
+    // Hexagon badge for room number
+    render::icon_hex(r, {card_x0 + 90, card_y0 + 62}, 32.0f,
+                     with_alpha(accent, u8(alpha * 60)),
+                     with_alpha(accent, u8(alpha * 220)));
+    render::icon_hex(r, {card_x0 + 90, card_y0 + 62}, 26.0f,
+                     0, with_alpha(accent, u8(alpha * 140)));
+    char num_buf[8];
+    std::snprintf(num_buf, sizeof(num_buf), "%d", idx);
+    const f32 num_w = r.text_width(num_buf, 4.0f);
+    r.draw_text({card_x0 + 90 - num_w * 0.5f, card_y0 + 46}, num_buf, 4.0f,
+                with_alpha(COLOR_CORE_INNER, u8(alpha * 255)));
+
+    // Header line
     char hdr[64];
     std::snprintf(hdr, sizeof(hdr), "ROOM %02d / %s", idx, boss ? "WARDEN" : "SECTOR");
-    const f32 hdr_age = clamp((elapsed - 0.10f) / 0.30f, 0.0f, 1.0f);
-    r.draw_text({card_x0 + 60, card_y0 + 34}, hdr, 2.2f,
-                with_alpha(accent, u8(alpha * 180 * hdr_age)));
+    r.draw_text({card_x0 + 140, card_y0 + 46}, hdr, 2.2f,
+                with_alpha(accent, u8(alpha * 180)));
 
-    // Title — character-stagger reveal
-    const char* title = ROOM_NAME[idx];
-    int tlen = 0; while (title[tlen]) ++tlen;
-    const f32 title_t0 = 0.18f;
-    const f32 title_t1 = 0.55f;
-    const f32 title_size = 5.0f;
-    const f32 title_y = card_y0 + 62;
-    const f32 title_x = card_x0 + 60;
-    f32 pen_x = title_x;
-    for (int ci = 0; ci < tlen; ++ci) {
-        const f32 thresh = ROOM_INTRO_FADE_IN * 0.0f
-            + (title_t0 + (title_t1 - title_t0) * (f32(ci) / f32(tlen))) * 0.55f;
-        const f32 cfrac = clamp((elapsed - thresh) / 0.22f, 0.0f, 1.0f);
-        if (cfrac > 0.0f) {
-            char one[2] = { title[ci], '\0' };
-            const f32 yoff = (1.0f - cfrac) * -14.0f;
-            r.draw_text({pen_x, title_y + yoff}, one, title_size,
-                        with_alpha(COLOR_CORE_INNER, u8(cfrac * 255.0f * alpha)));
-        }
-        char tmp[2] = { title[ci], '\0' };
-        pen_x += r.text_width(tmp, title_size);
+    // Title
+    r.draw_text({card_x0 + 140, card_y0 + 82}, ROOM_NAME[idx], 5.4f,
+                with_alpha(COLOR_CORE_INNER, u8(alpha * 255)));
+
+    // Divider with center diamond and side ticks
+    const f32 div_y = card_y0 + 152;
+    const f32 div_age = clamp((elapsed - 0.40f) / 0.35f, 0.0f, 1.0f);
+    const f32 dhw = (card_w - 180.0f) * 0.5f * div_age;
+    r.draw_line({card_cx - dhw, div_y}, {card_cx + dhw, div_y}, 1.0f,
+                with_alpha(accent, u8(150 * alpha)));
+    if (div_age > 0.5f) {
+        const f32 d = (div_age - 0.5f) * 2.0f;
+        const f32 ds = 6.0f * d;
+        r.draw_quad({card_cx, div_y - ds}, {card_cx + ds, div_y},
+                    {card_cx, div_y + ds}, {card_cx - ds, div_y},
+                    with_alpha(accent, u8(200 * alpha * d)));
+        r.draw_line({card_cx - dhw, div_y - 4}, {card_cx - dhw, div_y + 4}, 2.0f,
+                    with_alpha(accent, u8(180 * alpha * d)));
+        r.draw_line({card_cx + dhw, div_y - 4}, {card_cx + dhw, div_y + 4}, 2.0f,
+                    with_alpha(accent, u8(180 * alpha * d)));
     }
 
-    // Divider with sweep
-    const f32 div_y = card_y0 + 138;
-    const f32 div_age = clamp((elapsed - 0.40f) / 0.35f, 0.0f, 1.0f);
-    const f32 dhw = (card_w - 120.0f) * 0.5f * div_age;
-    r.draw_line({card_cx - dhw, div_y}, {card_cx + dhw, div_y},
-                1.0f, with_alpha(accent, u8(150 * alpha)));
-
-    // Blurb — fades in slightly after title
+    // Blurb with chevron marker
     const f32 blurb_age = clamp((elapsed - 0.55f) / 0.35f, 0.0f, 1.0f);
     if (blurb_age > 0.0f) {
-        r.draw_text({card_x0 + 60, card_y0 + 156}, ROOM_BLURB[idx], 2.0f,
+        render::icon_chevron(r, {card_x0 + 90, card_y0 + 188}, 20.0f, 0.0f,
+                             with_alpha(accent, u8(alpha * 200 * blurb_age)));
+        r.draw_text({card_x0 + 122, card_y0 + 178}, ROOM_BLURB[idx], 2.2f,
                     with_alpha(COLOR_FACET_EDGE, u8(alpha * 220 * blurb_age)));
     }
 
-    // Status tail (bottom-right)
+    // Status pill
     char tail[32];
-    if (boss)                              std::snprintf(tail, sizeof(tail), "BOSS ENCOUNTER");
-    else if (world_.is_room_cleared(idx))  std::snprintf(tail, sizeof(tail), "SECTOR CLEAR");
-    else                                   std::snprintf(tail, sizeof(tail), "HOSTILES ACTIVE");
-    const f32 tw = r.text_width(tail, 1.8f);
-    r.draw_text({card_x1 - 60 - tw, card_y1 - 36}, tail, 1.8f,
-                with_alpha(accent, u8(alpha * 200)));
-
-    // Sweep bar under the card
-    const f32 pulse = 0.5f + 0.5f * std::sin(elapsed * 6.0f);
-    const f32 sweep = 200.0f + pulse * 160.0f;
-    r.set_layer(render::Renderer::Layer::Additive);
-    r.draw_quad({card_cx - sweep * 0.5f, card_y1 + 6},
-                {card_cx + sweep * 0.5f, card_y1 + 6},
-                {card_cx + sweep * 0.5f, card_y1 + 9},
-                {card_cx - sweep * 0.5f, card_y1 + 9},
+    if (boss)                             std::snprintf(tail, sizeof(tail), "BOSS ENCOUNTER");
+    else if (world_.is_room_cleared(idx)) std::snprintf(tail, sizeof(tail), "SECTOR CLEAR");
+    else                                  std::snprintf(tail, sizeof(tail), "HOSTILES ACTIVE");
+    const f32 tw = r.text_width(tail, 1.9f);
+    const f32 pill_x = card_x1 - 40 - tw - 18;
+    const f32 pill_y = card_y1 - 56;
+    const f32 pill_h = 28;
+    r.draw_quad({pill_x, pill_y}, {pill_x + tw + 36, pill_y},
+                {pill_x + tw + 36, pill_y + pill_h}, {pill_x, pill_y + pill_h},
+                with_alpha(accent, u8(alpha * 40)));
+    r.draw_line({pill_x, pill_y}, {pill_x + tw + 36, pill_y}, 1.5f,
+                with_alpha(accent, u8(200 * alpha)));
+    r.draw_line({pill_x, pill_y + pill_h}, {pill_x + tw + 36, pill_y + pill_h}, 1.5f,
+                with_alpha(accent, u8(200 * alpha)));
+    r.draw_text({pill_x + 18, pill_y + 8}, tail, 1.9f,
                 with_alpha(accent, u8(220 * alpha)));
+
+    // Sweep bar with glow trail
+    const f32 pulse = 0.5f + 0.5f * std::sin(elapsed * 6.0f);
+    const f32 sweep = 220.0f + pulse * 180.0f;
+    r.set_layer(render::Renderer::Layer::Additive);
+    r.draw_quad({card_cx - sweep * 0.5f, card_y1 + 10},
+                {card_cx + sweep * 0.5f, card_y1 + 10},
+                {card_cx + sweep * 0.5f, card_y1 + 14},
+                {card_cx - sweep * 0.5f, card_y1 + 14},
+                with_alpha(accent, u8(220 * alpha)));
+    r.draw_quad({card_cx - sweep * 0.5f - 30, card_y1 + 6},
+                {card_cx - sweep * 0.5f, card_y1 + 6},
+                {card_cx - sweep * 0.5f, card_y1 + 18},
+                {card_cx - sweep * 0.5f - 30, card_y1 + 18},
+                with_alpha(accent, u8(60 * alpha)));
     r.set_layer(render::Renderer::Layer::Alpha);
 }
+
 
 void App::draw_pause_menu(render::Renderer& r) const {
     r.set_layer(render::Renderer::Layer::Alpha);
