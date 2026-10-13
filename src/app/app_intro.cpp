@@ -180,103 +180,69 @@ void App::draw_intro_background(render::Renderer& rr, int card_index, f32 card_t
 
 void App::draw_intro(render::Renderer& rr) const {
     f32 t = intro_time_;
-    int card_index = -1;
-    f32 card_t = 0.0f;
+    int idx = -1; f32 ct = 0;
     for (int i = 0; i < INTRO_CARD_COUNT; ++i) {
-        if (t < INTRO_CARDS[i].duration) { card_index = i; card_t = t; break; }
+        if (t < INTRO_CARDS[i].duration) { idx = i; ct = t; break; }
         t -= INTRO_CARDS[i].duration;
     }
-    if (card_index < 0) return;
-
-    const IntroCard& card = INTRO_CARDS[card_index];
-    const f32 p = card_t / card.duration;
-
-    // Tight envelope: quick fade in (0-0.10), hold, fade out (0.90-1.0)
-    f32 alpha = 1.0f;
-    if (p < 0.10f)       alpha = p / 0.10f;
-    else if (p > 0.90f)  alpha = (1.0f - p) / 0.10f;
-    alpha = clamp(alpha, 0.0f, 1.0f);
-
-    // Text slides in from the right (40 px) with ease-out over first 30%
-    const f32 enter = clamp(card_t / (card.duration * 0.30f), 0.0f, 1.0f);
-    const f32 ease  = 1.0f - (1.0f - enter) * (1.0f - enter);
-    const f32 slide = (1.0f - ease) * 40.0f;
+    if (idx < 0) return;
+    const IntroCard& c = INTRO_CARDS[idx];
+    f32 p = ct / c.duration;
+    f32 a = 1.0f;
+    if (p < 0.10f) a = p / 0.10f;
+    else if (p > 0.88f) a = (1.0f - p) / 0.12f;
+    a = clamp(a, 0.0f, 1.0f);
+    f32 enter = clamp(ct / (c.duration * 0.30f), 0.0f, 1.0f);
+    f32 ease = 1.0f - (1.0f - enter) * (1.0f - enter);
+    f32 sl = (1.0f - ease) * -50.0f;
+    f32 sr = (1.0f - ease) * 50.0f;
 
     rr.set_layer(render::Renderer::Layer::Alpha);
     rr.draw_quad({0,0}, {VIRTUAL_W,0}, {VIRTUAL_W,VIRTUAL_H}, {0,VIRTUAL_H}, rgba(3,8,14,255));
-    draw_intro_background(rr, card_index, card_t);
+    draw_intro_background(rr, idx, ct);
 
-    // Vertical vignette
-    rr.draw_quad({0,0}, {VIRTUAL_W,0}, {VIRTUAL_W,VIRTUAL_H*0.22f}, {0,VIRTUAL_H*0.22f}, rgba(0,0,0,180));
-    rr.draw_quad({0,VIRTUAL_H*0.78f}, {VIRTUAL_W,VIRTUAL_H*0.78f}, {VIRTUAL_W,VIRTUAL_H}, {0,VIRTUAL_H}, rgba(0,0,0,180));
+    f32 cx = VIRTUAL_W * 0.5f;
+    f32 yt = VIRTUAL_H * 0.62f;
+    f32 yb = VIRTUAL_H * 0.74f;
 
-    // Scan-line wipe during entry (0..0.10) and exit (0.90..1.0)
-    f32 wipe_y = -1.0f;
-    if (p < 0.10f)       wipe_y = VIRTUAL_H * (p / 0.10f);
-    else if (p > 0.90f)  wipe_y = VIRTUAL_H * ((p - 0.90f) / 0.10f);
-    if (wipe_y >= 0.0f) {
-        rr.set_layer(render::Renderer::Layer::Additive);
-        rr.draw_quad({0, wipe_y - 3.0f}, {VIRTUAL_W, wipe_y - 3.0f},
-                     {VIRTUAL_W, wipe_y + 3.0f}, {0, wipe_y + 3.0f},
-                     with_alpha(card.accent, u8(alpha * 200.0f)));
-        rr.set_layer(render::Renderer::Layer::Alpha);
-    }
-
-    // Card counter, top-left
     char cnt[16];
-    std::snprintf(cnt, sizeof(cnt), "%02d / %02d", card_index + 1, INTRO_CARD_COUNT);
-    rr.draw_text({60.0f, 44.0f}, cnt, 2.2f, with_alpha(card.accent, u8(alpha * 180.0f)));
+    std::snprintf(cnt, sizeof(cnt), "%02d / %02d", idx + 1, INTRO_CARD_COUNT);
+    rr.draw_text({60, 44}, cnt, 2.2f, with_alpha(c.accent, u8(a * 180)));
 
-    // Vertical frame lines
-    rr.draw_line({60.0f, 100.0f}, {60.0f, VIRTUAL_H - 100.0f}, 1.0f,
-                 with_alpha(card.accent, u8(alpha * 90.0f)));
-    rr.draw_line({VIRTUAL_W - 60.0f, 100.0f}, {VIRTUAL_W - 60.0f, VIRTUAL_H - 100.0f}, 1.0f,
-                 with_alpha(card.accent, u8(alpha * 90.0f)));
+    rr.draw_line({cx - 500, yt - 30}, {cx + 500, yt - 30}, 1.5f,
+                 with_alpha(c.accent, u8(a * 120)));
 
-    // Text block
-    const f32 cx = VIRTUAL_W * 0.5f;
-    const f32 text_y_top = VIRTUAL_H * 0.60f;
-    const f32 text_y_bot = VIRTUAL_H * 0.70f;
-
-    rr.draw_line({cx - 540.0f, text_y_top - 30.0f}, {cx + 540.0f, text_y_top - 30.0f},
-                 1.5f, with_alpha(card.accent, u8(alpha * 120.0f)));
-
-    if (card.small && card.small[0] != '\0') {
-        rr.draw_text_centered({cx + slide, text_y_top}, card.small, 2.8f,
-                              with_alpha(COLOR_FACET_EDGE, u8(alpha * 220.0f)));
+    if (c.small && c.small[0]) {
+        rr.draw_text_centered({cx + sl, yt}, c.small, 2.8f,
+                              with_alpha(COLOR_FACET_EDGE, u8(a * 220)));
     }
-    if (card.large && card.large[0] != '\0') {
-        const f32 pulse = 0.85f + 0.15f * std::sin(card_t * 2.5f);
-        rr.draw_text_centered({cx + slide, text_y_bot}, card.large, 7.0f,
-                              with_alpha(card.accent, u8(alpha * 255.0f * pulse)));
+    if (c.large && c.large[0]) {
+        f32 pulse = 0.90f + 0.10f * std::sin(ct * 2.5f);
+        rr.draw_text_centered({cx + sr, yb}, c.large, 7.0f,
+                              with_alpha(c.accent, u8(a * 255 * pulse)));
     }
 
     rr.set_layer(render::Renderer::Layer::Additive);
-    rr.draw_circle({cx, VIRTUAL_H * 0.32f}, 360.0f,
-                   with_alpha(card.accent, u8(alpha * 16.0f)), 40);
+    rr.draw_circle({cx, VIRTUAL_H * 0.32f}, 380.0f,
+                   with_alpha(c.accent, u8(a * 16)), 40);
     rr.set_layer(render::Renderer::Layer::Alpha);
 
-    // Skip hint pulses slowly
-    const f32 skip_p = 0.5f + 0.5f * std::sin(intro_time_ * 3.5f);
-    rr.draw_text({VIRTUAL_W - 340.0f, VIRTUAL_H - 46.0f},
-                 "PRESS ANY KEY TO SKIP", 1.8f,
-                 with_alpha(COLOR_FACET_EDGE, u8(80.0f + 90.0f * skip_p)));
+    f32 sp = 0.5f + 0.5f * std::sin(intro_time_ * 3.5f);
+    rr.draw_text({VIRTUAL_W - 340, VIRTUAL_H - 46}, "PRESS ANY KEY TO SKIP", 1.8f,
+                 with_alpha(COLOR_FACET_EDGE, u8(80 + 90 * sp)));
 
-    // Progress dots
-    const f32 dot_y = VIRTUAL_H - 60.0f;
-    const f32 dot_spacing = 26.0f;
-    const f32 dots_x0 = cx - (f32(INTRO_CARD_COUNT - 1) * dot_spacing) * 0.5f;
+    f32 dy = VIRTUAL_H - 60;
+    f32 ds = 26;
+    f32 dx0 = cx - (f32(INTRO_CARD_COUNT - 1) * ds) * 0.5f;
     for (int i = 0; i < INTRO_CARD_COUNT; ++i) {
-        const Vec2 c { dots_x0 + f32(i) * dot_spacing, dot_y };
-        if (i < card_index) {
-            rr.draw_circle(c, 4.0f, with_alpha(COLOR_CORE_EDGE, 140), 12);
-        } else if (i == card_index) {
-            rr.draw_circle(c, 5.5f, COLOR_CORE_INNER, 12);
-            rr.draw_ring(c, 8.0f, 10.0f, with_alpha(card.accent, 180), 16);
-        } else {
-            rr.draw_ring(c, 3.0f, 4.0f, with_alpha(COLOR_CORE_EDGE, 90), 12);
-        }
+        Vec2 pc { dx0 + f32(i) * ds, dy };
+        if (i < idx) rr.draw_circle(pc, 4.0f, with_alpha(COLOR_CORE_EDGE, 140), 12);
+        else if (i == idx) {
+            rr.draw_circle(pc, 5.5f, COLOR_CORE_INNER, 12);
+            rr.draw_ring(pc, 8.0f, 10.0f, with_alpha(c.accent, 180), 16);
+        } else rr.draw_ring(pc, 3.0f, 4.0f, with_alpha(COLOR_CORE_EDGE, 90), 12);
     }
 }
+
 
 } // namespace inc

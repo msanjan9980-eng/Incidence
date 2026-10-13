@@ -331,41 +331,94 @@ void App::draw_log_overlay(render::Renderer& r) const {
     if (!lg.playing()) return;
 
     const game::LogEntry& entry = game::log_at(lg.active_index);
+    const int body_len = int(std::strlen(entry.body));
 
-    r.set_layer(render::Renderer::Layer::Alpha);
-    r.draw_quad({ 0, 0 }, { VIRTUAL_W, 0 }, { VIRTUAL_W, VIRTUAL_H }, { 0, VIRTUAL_H },
-                with_alpha(COLOR_VOID, 210));
+    // Panel entrance — driven by typing age, forced to 1 if typing already done
+    const f32 open = lg.fully_shown ? 1.0f
+                    : clamp(lg.char_timer / 0.30f, 0.0f, 1.0f);
+    const f32 ease = 1.0f - (1.0f - open) * (1.0f - open);
+    const f32 slide = (1.0f - ease) * 70.0f;
 
     const f32 cx = VIRTUAL_W * 0.5f;
-    const f32 panel_top = VIRTUAL_H * 0.28f;
-    const f32 panel_w = 1100.0f;
-    const f32 panel_h = 480.0f;
+    const f32 panel_top  = VIRTUAL_H * 0.28f + slide;
+    const f32 panel_w    = 1100.0f;
+    const f32 panel_h    = 480.0f;
     const f32 panel_left = cx - panel_w * 0.5f;
+    const f32 panel_right  = panel_left + panel_w;
+    const f32 panel_bottom = panel_top + panel_h;
 
-    r.draw_quad({ panel_left, panel_top }, { panel_left + panel_w, panel_top },
-                { panel_left + panel_w, panel_top + panel_h }, { panel_left, panel_top + panel_h },
-                with_alpha(COLOR_CORE_FILL, 230));
-    r.draw_line({ panel_left, panel_top }, { panel_left + panel_w, panel_top }, 2.0f, COLOR_CORE_EDGE);
-    r.draw_line({ panel_left, panel_top + panel_h }, { panel_left + panel_w, panel_top + panel_h }, 2.0f, COLOR_CORE_EDGE);
+    r.set_layer(render::Renderer::Layer::Alpha);
+    r.draw_quad({0,0}, {VIRTUAL_W,0}, {VIRTUAL_W,VIRTUAL_H}, {0,VIRTUAL_H},
+                with_alpha(COLOR_VOID, u8(ease * 215.0f)));
 
-    r.draw_text({ panel_left + 40.0f, panel_top + 30.0f },
-                "YARA OKONKWO - MAINTENANCE LOG", 2.6f, COLOR_CORE_EDGE);
-    char day_buf[32];
-    std::snprintf(day_buf, sizeof(day_buf), "DAY %d", entry.day);
-    const f32 day_w = r.text_width(day_buf, 2.4f);
-    r.draw_text({ panel_left + panel_w - 40.0f - day_w, panel_top + 30.0f },
-                day_buf, 2.4f, with_alpha(COLOR_FACET_EDGE, 200));
+    // Drop shadow
+    r.draw_quad({panel_left + 14, panel_top + 14},
+                {panel_right + 14, panel_top + 14},
+                {panel_right + 14, panel_bottom + 14},
+                {panel_left + 14, panel_bottom + 14},
+                rgba(0,0,0,u8(ease * 160.0f)));
 
-    r.draw_line({ panel_left + 40.0f, panel_top + 80.0f },
-                { panel_left + panel_w - 40.0f, panel_top + 80.0f },
-                1.0f, with_alpha(COLOR_CORE_EDGE, 120));
+    // Panel body
+    r.draw_quad({panel_left, panel_top}, {panel_right, panel_top},
+                {panel_right, panel_bottom}, {panel_left, panel_bottom},
+                with_alpha(COLOR_CORE_FILL, u8(ease * 235.0f)));
 
-    const char* body = entry.body;
-    const int body_len = int(std::strlen(body));
+    // Border lines draw outward from center
+    const f32 bl = panel_w * ease * 0.5f;
+    r.draw_line({cx - bl, panel_top}, {cx + bl, panel_top}, 2.0f, COLOR_CORE_EDGE);
+    r.draw_line({cx - bl, panel_bottom}, {cx + bl, panel_bottom}, 2.0f, COLOR_CORE_EDGE);
+
+    // Left accent strip
+    r.draw_quad({panel_left + 10, panel_top + 10},
+                {panel_left + 16, panel_top + 10},
+                {panel_left + 16, panel_bottom - 10},
+                {panel_left + 10, panel_bottom - 10},
+                with_alpha(COLOR_CORE_EDGE, u8(ease * 220.0f)));
+
+    // Scanline sweep across the panel during first 0.5s
+    if (lg.char_timer < 0.5f) {
+        const f32 t = lg.char_timer / 0.5f;
+        const f32 sy = panel_top + t * panel_h;
+        r.set_layer(render::Renderer::Layer::Additive);
+        r.draw_quad({panel_left, sy - 2.5f}, {panel_right, sy - 2.5f},
+                    {panel_right, sy + 2.5f}, {panel_left, sy + 2.5f},
+                    with_alpha(COLOR_CORE_INNER, u8((1.0f - t) * 200.0f)));
+        r.set_layer(render::Renderer::Layer::Alpha);
+    }
+
+    // Header
+    if (lg.char_timer > 0.10f) {
+        const f32 ha = clamp((lg.char_timer - 0.10f) / 0.35f, 0.0f, 1.0f);
+        r.draw_text({panel_left + 40, panel_top + 30},
+                    "YARA OKONKWO - MAINTENANCE LOG", 2.6f,
+                    with_alpha(COLOR_CORE_EDGE, u8(ha * 255.0f)));
+    }
+
+    // Day stamp slides in from the right
+    if (lg.char_timer > 0.22f) {
+        char day_buf[32];
+        std::snprintf(day_buf, sizeof(day_buf), "DAY %d", entry.day);
+        const f32 da = clamp((lg.char_timer - 0.22f) / 0.28f, 0.0f, 1.0f);
+        const f32 dw = r.text_width(day_buf, 2.4f);
+        r.draw_text({panel_right - 40 - dw + (1.0f - da) * 80.0f,
+                     panel_top + 30},
+                    day_buf, 2.4f,
+                    with_alpha(COLOR_FACET_EDGE, u8(da * 220.0f)));
+    }
+
+    // Divider draws outward from center
+    if (lg.char_timer > 0.30f) {
+        const f32 d = clamp((lg.char_timer - 0.30f) / 0.30f, 0.0f, 1.0f);
+        const f32 dhw = (panel_w - 80.0f) * 0.5f * d;
+        r.draw_line({cx - dhw, panel_top + 80},
+                    {cx + dhw, panel_top + 80},
+                    1.0f, with_alpha(COLOR_CORE_EDGE, u8(d * 150.0f)));
+    }
+
+    // Body — word-wrapped with typing cursor
     const int shown = lg.chars_shown < body_len ? lg.chars_shown : body_len;
-
     const f32 text_x = panel_left + 40.0f;
-    const f32 text_y0 = panel_top + 110.0f;
+    const f32 text_y0 = panel_top + 115.0f;
     constexpr f32 LINE_PX = 2.0f;
     constexpr int CHARS_PER_LINE = 90;
     constexpr f32 LINE_H = 34.0f;
@@ -373,32 +426,74 @@ void App::draw_log_overlay(render::Renderer& r) const {
     int line = 0;
     int col = 0;
     char buf[CHARS_PER_LINE + 4];
-    for (int i = 0; i < shown; ++i) {
-        if (col < CHARS_PER_LINE) {
-            buf[col++] = body[i];
-        }
+    for (int k = 0; k < shown; ++k) {
+        if (col < CHARS_PER_LINE) buf[col++] = entry.body[k];
         if (col >= CHARS_PER_LINE) {
             buf[col] = '\0';
-            r.draw_text({ text_x, text_y0 + f32(line) * LINE_H }, buf, LINE_PX, COLOR_CORE_INNER);
-            ++line;
-            col = 0;
+            r.draw_text({text_x, text_y0 + f32(line) * LINE_H}, buf,
+                        LINE_PX, COLOR_CORE_INNER);
+            ++line; col = 0;
         }
     }
     if (col > 0) {
         buf[col] = '\0';
-        r.draw_text({ text_x, text_y0 + f32(line) * LINE_H }, buf, LINE_PX, COLOR_CORE_INNER);
+        r.draw_text({text_x, text_y0 + f32(line) * LINE_H}, buf,
+                    LINE_PX, COLOR_CORE_INNER);
     }
 
+    // Typing cursor
+    if (!lg.fully_shown && shown > 0) {
+        const int cur_line = shown / CHARS_PER_LINE;
+        const int cur_col  = shown % CHARS_PER_LINE;
+        if (cur_line < 16) {
+            char before[CHARS_PER_LINE + 1];
+            const int lstart = cur_line * CHARS_PER_LINE;
+            for (int k = 0; k < cur_col; ++k) before[k] = entry.body[lstart + k];
+            before[cur_col] = '\0';
+            const f32 curs_x = text_x + r.text_width(before, LINE_PX) + 2.0f;
+            const f32 curs_y = text_y0 + f32(cur_line) * LINE_H;
+            const f32 blink = 0.5f + 0.5f * std::sin(platform::time_seconds() * 14.0f);
+            r.draw_quad({curs_x, curs_y}, {curs_x + 14.0f, curs_y},
+                        {curs_x + 14.0f, curs_y + 16.0f}, {curs_x, curs_y + 16.0f},
+                        with_alpha(COLOR_CORE_INNER, u8(140 + 100 * blink)));
+        }
+    }
+
+    // Progress bar (chars shown / body)
+    if (body_len > 0) {
+        const f32 pb_w = panel_w - 80.0f;
+        const f32 pb_x = panel_left + 40.0f;
+        const f32 pb_y = panel_bottom - 34.0f;
+        const f32 pb_h = 3.0f;
+        r.draw_quad({pb_x, pb_y}, {pb_x + pb_w, pb_y},
+                    {pb_x + pb_w, pb_y + pb_h}, {pb_x, pb_y + pb_h},
+                    with_alpha(COLOR_CORE_EDGE, 40));
+        const f32 f = f32(shown) / f32(body_len);
+        if (f > 0.0f) {
+            r.draw_quad({pb_x, pb_y}, {pb_x + pb_w * f, pb_y},
+                        {pb_x + pb_w * f, pb_y + pb_h}, {pb_x, pb_y + pb_h},
+                        COLOR_CORE_EDGE);
+        }
+    }
+
+    // Continue prompt
     if (lg.fully_shown) {
-        const f32 pulse = 0.5f + 0.5f * std::sin(platform::time_seconds() * 4.0f);
-        r.draw_text_centered({ cx, panel_top + panel_h - 50.0f },
-                             "[SPACE] CONTINUE", 2.0f,
-                             with_alpha(COLOR_CORE_INNER, u8(180 + 75 * pulse)));
+        const f32 p = 0.5f + 0.5f * std::sin(platform::time_seconds() * 4.5f);
+        r.draw_text_centered({cx, panel_bottom - 62.0f},
+                             "[SPACE] CONTINUE", 2.2f + p * 0.25f,
+                             with_alpha(COLOR_CORE_INNER, u8(170 + 85 * p)));
+    } else {
+        const f32 p = 0.5f + 0.5f * std::sin(platform::time_seconds() * 3.0f);
+        r.draw_text_centered({cx, panel_bottom - 62.0f},
+                             "[SPACE] SKIP TYPING", 1.8f,
+                             with_alpha(COLOR_FACET_EDGE, u8(110 + 60 * p)));
     }
 
+    // Additive glow under the panel
     r.set_layer(render::Renderer::Layer::Additive);
-    r.draw_circle({ cx, panel_top + panel_h * 0.5f }, 400.0f,
-                  with_alpha(COLOR_CORE_EDGE, 12), 40);
+    r.draw_circle({cx, panel_top + panel_h * 0.5f}, 420.0f,
+                  with_alpha(COLOR_CORE_EDGE, u8(ease * 14.0f)), 40);
+    r.set_layer(render::Renderer::Layer::Alpha);
 }
 
 void App::draw_log_archive(render::Renderer& r) const {
