@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "core/math.hpp"
 #include "core/vec2.hpp"
@@ -29,6 +29,9 @@ public:
     void end_frame();
 
     void set_layer(Layer l);
+
+    // Offset applied to world-space draws (used for screen shake).
+    void set_view_offset(Vec2 v) { view_offset_ = v; }
 
     // ---- Primitives ----------------------------------------------------
     void draw_triangle(Vec2 a, Vec2 b, Vec2 c, Color color);
@@ -74,6 +77,7 @@ private:
     int   current_batch_start_ = 0;
     Layer current_layer_       = Layer::Alpha;
 
+    Vec2 view_offset_ { 0.0f, 0.0f };
     int  window_w_ = 1920;
     int  window_h_ = 1080;
 };

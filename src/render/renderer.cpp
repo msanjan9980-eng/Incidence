@@ -1,4 +1,4 @@
-﻿#include "render/renderer.hpp"
+#include "render/renderer.hpp"
 #include "render/shaders.hpp"
 #include "render/font.hpp"
 
@@ -21,7 +21,7 @@ inline void unpack_color(Color c, f32& out_r, f32& out_g, f32& out_b, f32& out_a
     out_a = f32(color_a(c)) * inv255;
 }
 
-Mat3 build_projection(int window_w, int window_h) {
+Mat3 build_projection(int window_w, int window_h, Vec2 view_off) {
     const f32 vw = VIRTUAL_W;
     const f32 vh = VIRTUAL_H;
     const f32 ww = f32(window_w);
@@ -39,8 +39,8 @@ Mat3 build_projection(int window_w, int window_h) {
     Mat3 m = Mat3::identity();
     m.m[0] =  sx * scale_to_fit;
     m.m[4] =  sy * scale_to_fit;
-    m.m[6] = -1.0f + off_x * (2.0f / ww);
-    m.m[7] =  1.0f - off_y * (2.0f / wh);
+    m.m[6] = -1.0f + off_x * (2.0f / ww) - view_off.x * sx * scale_to_fit;
+    m.m[7] =  1.0f - off_y * (2.0f / wh) - view_off.y * sy * scale_to_fit;
     return m;
 }
 
@@ -170,7 +170,7 @@ void Renderer::end_frame() {
     }
 
     if (vert_count_ > 0 && batch_count_ > 0) {
-        Mat3 proj = build_projection(window_w_, window_h_);
+        Mat3 proj = build_projection(window_w_, window_h_, view_offset_);
         for (int i = 0; i < vert_count_; ++i) {
             Vtx& v = cpu_verts_[i];
             Vec2 ndc = proj.transform_point({ v.x, v.y });

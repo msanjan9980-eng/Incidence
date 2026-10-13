@@ -11,6 +11,7 @@
 #include "game/warden.hpp"
 #include "game/character.hpp"
 #include "game/screen.hpp"
+#include "render/effects.hpp"
 
 namespace inc::render { class Renderer; }
 namespace inc::platform { struct InputState; }
@@ -58,6 +59,9 @@ public:
     [[nodiscard]] const Character& character() const noexcept { return character_; }
 
     [[nodiscard]] int  pending_log_trigger() const noexcept { return pending_log_trigger_; }
+
+    [[nodiscard]] render::Effects&       effects()       noexcept { return effects_; }
+    [[nodiscard]] const render::Effects& effects() const noexcept { return effects_; }
     void clear_pending_log_trigger() noexcept { pending_log_trigger_ = -1; }
 
 private:
@@ -110,6 +114,7 @@ private:
     f32  levelup_banner_timer_ = 0.0f;
     int  levelup_banner_level_ = 1;
 
+    render::Effects effects_;
     int  pending_log_trigger_ = -1;
 };
 

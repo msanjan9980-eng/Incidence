@@ -414,7 +414,7 @@ void App::step(f32 dt) {
             world_.clear_pending_log_trigger();
         }
 
-        world_.step(dt, in);
+        if (room_intro_timer_ <= 0.0f) world_.step(dt, in);
         check_quests();
 
         if (world_.player_dead()) {

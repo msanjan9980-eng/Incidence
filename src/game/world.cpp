@@ -107,6 +107,7 @@ void World::reset() {
     levelup_banner_timer_ = 0.0f;
     levelup_banner_level_ = 1;
     pending_log_trigger_  = -1;
+    effects_.reset();
     load_room(0);
 }
 
@@ -276,6 +277,9 @@ void World::attempt_door_transition() {
 }
 
 void World::step(f32 dt, const platform::InputState& input) {
+    effects_.update(dt);
+    if (effects_.hitstop > 0.0f) return;
+
     if (levelup_banner_timer_ > 0.0f) {
         levelup_banner_timer_ -= dt;
         if (levelup_banner_timer_ < 0.0f) levelup_banner_timer_ = 0.0f;
@@ -507,7 +511,14 @@ bool World::resolve_warden_collisions(Projectile& p) {
         p.alive = false;
         const int prev_phase = warden_.phase;
         warden_.damage(1);
-        if (warden_.phase != prev_phase) audio::play_warden_phase();
+        if (warden_.phase != prev_phase) {
+            audio::play_warden_phase();
+            effects_.add_flash(COLOR_ENEMY_CORE, 0.35f);
+            effects_.add_shake(22.0f, 0.55f);
+            effects_.add_hitstop(0.08f);
+            effects_.spawn_burst(warden_.pos, 26, 480.0f, COLOR_ENEMY_CORE);
+            effects_.spawn_ring(warden_.pos, 180.0f, COLOR_ENEMY_EDGE, 0.7f);
+        }
         spawn_flash(p.pos);
         if (warden_.alive) {
             const int b = (p.bounces < 6) ? p.bounces : 6;
@@ -518,6 +529,11 @@ bool World::resolve_warden_collisions(Projectile& p) {
             warden_defeated_ = true;
             pending_log_trigger_ = 10;
             audio::play_victory();
+            effects_.add_flash(COLOR_CORE_INNER, 0.9f);
+            effects_.add_shake(34.0f, 1.1f);
+            effects_.add_hitstop(0.12f);
+            effects_.spawn_burst(warden_.pos, 60, 720.0f, COLOR_ENEMY_CORE);
+            effects_.spawn_ring(warden_.pos, 320.0f, COLOR_CORE_INNER, 1.2f);
             const int gained = character_.add_xp(2500);
             if (gained > 0) {
                 levelup_banner_timer_ = 2.0f;
@@ -574,6 +590,8 @@ bool World::resolve_collisions(Projectile& p) {
                     last_incidence_deg_ = rad_to_deg(std::acos(cos_i));
                     audio::play_shield_reflect(last_incidence_deg_);
 
+                    effects_.spawn_reflect(p.pos, n, COLOR_CORE_INNER);
+                    effects_.add_shake(4.5f, 0.15f);
                     p.vel = reflect(p.vel, n);
                     p.vel *= character_.reflect_multiplier() * reflect_speed_mult(character_);
                     const f32 out_speed = p.vel.length();
@@ -620,6 +638,10 @@ bool World::resolve_collisions(Projectile& p) {
         Vec2 to_bullet = p.pos - drone_.position;
         if (to_bullet.length() < Drone::CORE_RADIUS + p.radius) {
             p.alive = false;
+            effects_.spawn_burst(p.pos, 14, 320.0f, COLOR_ENEMY_CORE);
+            effects_.spawn_ring(p.pos, 90.0f, COLOR_ENEMY_EDGE, 0.45f);
+            effects_.add_shake(16.0f, 0.45f);
+            effects_.add_hitstop(0.06f);
             player_hp_--;
             audio::play_player_hit();
             if (player_hp_ <= 0) player_dead_ = true;
@@ -641,7 +663,17 @@ bool World::resolve_collisions(Projectile& p) {
                 kills_++;
                 audio::play_enemy_death();
                 const int b = (p.bounces < 6) ? p.bounces : 6;
-                score_ += 100 * (1 << b);
+                const int gained = 100 * (1 << b);
+                score_ += gained;
+                effects_.spawn_burst(t.pos, 22, 380.0f, COLOR_ENEMY_CORE);
+                effects_.spawn_ring(t.pos, 120.0f, COLOR_ENEMY_EDGE);
+                effects_.add_shake(8.0f, 0.28f);
+                effects_.add_hitstop(0.05f);
+                {
+                    char buf[24];
+                    std::snprintf(buf, sizeof(buf), "+%d x%d", gained, b);
+                    effects_.add_label(t.pos, buf, COLOR_CORE_INNER);
+                }
                 award_kill_xp(t.type);
             }
             return true;
@@ -651,6 +683,7 @@ bool World::resolve_collisions(Projectile& p) {
 }
 
 void World::draw(render::Renderer& r) const {
+    r.set_view_offset(effects_.shake_offset);
     r.set_layer(render::Renderer::Layer::Alpha);
 
     constexpr f32 W = VIRTUAL_W;
@@ -751,115 +784,222 @@ void World::draw(render::Renderer& r) const {
         r.draw_circle(t.pos, t.radius + 16.0f, with_alpha(glow, 30), 22);
     }
 
+    effects_.draw(r);
+    r.set_view_offset({0.0f, 0.0f});
+    effects_.draw_flash(r);
+
     r.set_layer(render::Renderer::Layer::Alpha);
 
-    for (int i = 0; i < player_hp_; ++i) {
-        const f32 x = 42.0f + f32(i) * 34.0f;
-        const f32 y = 44.0f;
-        render::icon_heart(r, {x, y}, 26.0f, COLOR_CORE_INNER);
-    }
-    for (int i = 0; i < kills_ && i < 20; ++i) {
-        const f32 x = 46.0f + f32(i) * 20.0f;
-        const f32 y = 78.0f;
-        render::icon_bullet(r, {x, y}, 12.0f, COLOR_ENEMY_EDGE);
+    // ========================================================================
+    // HUD - vitals, level/xp, score, room progress
+    // ========================================================================
+
+    // Low-HP warning: pulsing red border on all four edges
+    if (player_hp_ <= 1 && !player_dead_) {
+        const f32 wp = 0.5f + 0.5f * std::sin(platform::time_seconds() * 5.5f);
+        const u8 wa = u8(60 + 90 * wp);
+        const f32 th = 6.0f + wp * 4.0f;
+        r.draw_quad({0, 0}, {VIRTUAL_W, 0}, {VIRTUAL_W, th}, {0, th},
+                    with_alpha(COLOR_ENEMY_EDGE, wa));
+        r.draw_quad({0, VIRTUAL_H - th}, {VIRTUAL_W, VIRTUAL_H - th},
+                    {VIRTUAL_W, VIRTUAL_H}, {0, VIRTUAL_H},
+                    with_alpha(COLOR_ENEMY_EDGE, wa));
+        r.draw_quad({0, th}, {th, th}, {th, VIRTUAL_H - th}, {0, VIRTUAL_H - th},
+                    with_alpha(COLOR_ENEMY_EDGE, wa));
+        r.draw_quad({VIRTUAL_W - th, th}, {VIRTUAL_W, th},
+                    {VIRTUAL_W, VIRTUAL_H - th}, {VIRTUAL_W - th, VIRTUAL_H - th},
+                    with_alpha(COLOR_ENEMY_EDGE, wa));
     }
 
+    // --- HP hearts: filled for alive slots, outlined for lost slots ---
     {
-        const f32 LVL_X = 30.0f;
-        const f32 LVL_Y = 86.0f;
+        const int max_hp = character_.max_hp();
+        for (int i = 0; i < max_hp; ++i) {
+            const f32 x = 42.0f + f32(i) * 34.0f;
+            const f32 y = 44.0f;
+            if (i < player_hp_) {
+                r.set_layer(render::Renderer::Layer::Additive);
+                r.draw_circle({x, y}, 16.0f,
+                              with_alpha(COLOR_CORE_EDGE, 60), 16);
+                r.set_layer(render::Renderer::Layer::Alpha);
+                render::icon_heart(r, {x, y}, 26.0f, COLOR_CORE_INNER);
+            } else {
+                render::icon_heart(r, {x, y}, 24.0f,
+                                   with_alpha(COLOR_CORE_EDGE, 70));
+                render::icon_heart(r, {x, y}, 17.0f,
+                                   with_alpha(COLOR_VOID, 255));
+            }
+        }
+    }
+
+    // --- Kills as bullets, with running count ---
+    {
+        const int shown = (kills_ < 20) ? kills_ : 20;
+        for (int i = 0; i < shown; ++i) {
+            const f32 x = 46.0f + f32(i) * 20.0f;
+            const f32 y = 82.0f;
+            render::icon_bullet(r, {x, y}, 12.0f, COLOR_ENEMY_EDGE);
+        }
+        if (kills_ > 0) {
+            char kb[16];
+            std::snprintf(kb, sizeof(kb), "x%d", kills_);
+            r.draw_text({46.0f + f32(shown) * 20.0f + 8.0f, 74.0f},
+                        kb, 2.0f, with_alpha(COLOR_ENEMY_EDGE, 220));
+        }
+    }
+
+    // --- Level + XP bar with shimmer sweep ---
+    {
+        const f32 LX = 30.0f;
+        const f32 LY = 112.0f;
         char lv_buf[16];
         std::snprintf(lv_buf, sizeof(lv_buf), "LV %d", character_.level);
-        r.draw_text({ LVL_X, LVL_Y }, lv_buf, 2.2f, COLOR_CORE_INNER);
+        r.draw_text({LX, LY}, lv_buf, 2.6f, COLOR_CORE_INNER);
 
-        const f32 bar_x = LVL_X + 90.0f;
-        const f32 bar_y = LVL_Y + 4.0f;
-        const f32 bar_w = 160.0f;
-        const f32 bar_h = 10.0f;
-        r.draw_quad({ bar_x,         bar_y         },
-                    { bar_x + bar_w, bar_y         },
-                    { bar_x + bar_w, bar_y + bar_h },
-                    { bar_x,         bar_y + bar_h },
-                    with_alpha(COLOR_CORE_EDGE, 40));
+        const f32 bar_x = LX + 90.0f;
+        const f32 bar_y = LY + 4.0f;
+        const f32 bar_w = 220.0f;
+        const f32 bar_h = 14.0f;
+
+        r.draw_quad({bar_x, bar_y}, {bar_x + bar_w, bar_y},
+                    {bar_x + bar_w, bar_y + bar_h}, {bar_x, bar_y + bar_h},
+                    with_alpha(COLOR_CORE_EDGE, 30));
+        r.draw_line({bar_x, bar_y}, {bar_x + bar_w, bar_y}, 1.0f,
+                    with_alpha(COLOR_CORE_EDGE, 120));
+        r.draw_line({bar_x, bar_y + bar_h}, {bar_x + bar_w, bar_y + bar_h}, 1.0f,
+                    with_alpha(COLOR_CORE_EDGE, 120));
+
         const f32 fill = bar_w * character_.xp_progress();
         if (fill > 0.5f) {
-            r.draw_quad({ bar_x,        bar_y         },
-                        { bar_x + fill, bar_y         },
-                        { bar_x + fill, bar_y + bar_h },
-                        { bar_x,        bar_y + bar_h },
+            r.draw_quad({bar_x, bar_y}, {bar_x + fill, bar_y},
+                        {bar_x + fill, bar_y + bar_h}, {bar_x, bar_y + bar_h},
                         COLOR_CORE_EDGE);
+            const f32 sweep = std::fmod(f32(platform::time_seconds()) * 180.0f,
+                                        bar_w + 80.0f) - 40.0f;
+            if (sweep > 0.0f && sweep < fill + 40.0f) {
+                r.set_layer(render::Renderer::Layer::Additive);
+                r.draw_quad({bar_x + sweep - 30.0f, bar_y},
+                            {bar_x + sweep + 8.0f, bar_y},
+                            {bar_x + sweep + 8.0f, bar_y + bar_h},
+                            {bar_x + sweep - 30.0f, bar_y + bar_h},
+                            with_alpha(COLOR_CORE_INNER, 70));
+                r.set_layer(render::Renderer::Layer::Alpha);
+            }
         }
+
+        char pct[16];
+        std::snprintf(pct, sizeof(pct), "%d%%",
+                      int(character_.xp_progress() * 100.0f));
+        r.draw_text({bar_x + bar_w + 12.0f, LY}, pct, 2.0f,
+                    with_alpha(COLOR_FACET_EDGE, 180));
 
         if (character_.stat_points > 0) {
-            const f32 pulse = 0.5f + 0.5f * std::sin(platform::time_seconds() * 6.0f);
-            const Vec2 c { bar_x + bar_w + 20.0f, bar_y + bar_h * 0.5f };
-            r.draw_circle(c, 6.0f + pulse * 2.0f,
-                          with_alpha(COLOR_CORE_INNER, u8(180 + 75 * pulse)), 14);
-            r.draw_ring(c, 9.0f, 11.0f,
-                        with_alpha(COLOR_CORE_EDGE, u8(120 + 100 * pulse)), 16);
+            const Vec2 c {bar_x + bar_w + 90.0f, bar_y + bar_h * 0.5f};
+            const f32 p = 0.5f + 0.5f * std::sin(platform::time_seconds() * 6.0f);
+            r.set_layer(render::Renderer::Layer::Additive);
+            r.draw_circle(c, 12.0f + p * 4.0f,
+                          with_alpha(COLOR_CORE_EDGE, u8(80 + 60 * p)), 16);
+            r.set_layer(render::Renderer::Layer::Alpha);
+            r.draw_circle(c, 8.0f, COLOR_CORE_INNER, 14);
+            char sb[8]; std::snprintf(sb, sizeof(sb), "%d", character_.stat_points);
+            const f32 sw = r.text_width(sb, 1.8f);
+            r.draw_text({c.x - sw * 0.5f, c.y - 6.0f}, sb, 1.8f, COLOR_VOID);
         }
-
         if (character_.skill_points > 0) {
-            const f32 pulse = 0.5f + 0.5f * std::sin(platform::time_seconds() * 5.0f + 1.0f);
-            const Vec2 c { bar_x + bar_w + 60.0f, bar_y + bar_h * 0.5f };
-            r.draw_circle(c, 5.0f + pulse * 2.0f,
-                          with_alpha(COLOR_LEAD_EDGE, u8(160 + 75 * pulse)), 14);
-            r.draw_ring(c, 8.0f, 10.0f,
-                        with_alpha(COLOR_LEAD_EDGE, u8(100 + 100 * pulse)), 16);
+            const Vec2 c {bar_x + bar_w + 130.0f, bar_y + bar_h * 0.5f};
+            const f32 p = 0.5f + 0.5f * std::sin(platform::time_seconds() * 5.0f + 1.0f);
+            r.set_layer(render::Renderer::Layer::Additive);
+            r.draw_circle(c, 12.0f + p * 4.0f,
+                          with_alpha(COLOR_LEAD_EDGE, u8(80 + 60 * p)), 16);
+            r.set_layer(render::Renderer::Layer::Alpha);
+            r.draw_circle(c, 8.0f, COLOR_LEAD_CORE, 14);
+            char sb[8]; std::snprintf(sb, sizeof(sb), "%d", character_.skill_points);
+            const f32 sw = r.text_width(sb, 1.8f);
+            r.draw_text({c.x - sw * 0.5f, c.y - 6.0f}, sb, 1.8f, COLOR_VOID);
         }
     }
 
+    // --- Score bar with shimmer + numeric readout ---
     {
-        constexpr f32 BAR_X = 1580.0f;
-        constexpr f32 BAR_Y = 30.0f;
-        constexpr f32 BAR_W = 300.0f;
-        constexpr f32 BAR_H = 12.0f;
+        constexpr f32 BAR_W = 400.0f;
+        constexpr f32 BAR_H = 16.0f;
+        const f32 BAR_X = VIRTUAL_W - BAR_W - 40.0f;
+        const f32 BAR_Y = 52.0f;
         const f32 SCORE_MAX = f32(ROOM_COUNT + 1) * 40000.0f;
-        r.draw_quad({ BAR_X,           BAR_Y           },
-                    { BAR_X + BAR_W,   BAR_Y           },
-                    { BAR_X + BAR_W,   BAR_Y + BAR_H   },
-                    { BAR_X,           BAR_Y + BAR_H   },
-                    with_alpha(COLOR_SCORE_BAR, 40));
+
+        r.draw_text({BAR_X, BAR_Y - 24.0f}, "SCORE", 2.0f,
+                    with_alpha(COLOR_SCORE_BAR, 220));
+
+        char sc_v[24];
+        std::snprintf(sc_v, sizeof(sc_v), "%d", int(score_));
+        const f32 svw = r.text_width(sc_v, 2.4f);
+        r.draw_text({BAR_X + BAR_W - svw, BAR_Y - 26.0f}, sc_v, 2.4f,
+                    COLOR_SCORE_BAR);
+
+        r.draw_quad({BAR_X, BAR_Y}, {BAR_X + BAR_W, BAR_Y},
+                    {BAR_X + BAR_W, BAR_Y + BAR_H}, {BAR_X, BAR_Y + BAR_H},
+                    with_alpha(COLOR_SCORE_BAR, 30));
+
         const f32 fill_w = BAR_W * clamp(f32(score_) / SCORE_MAX, 0.0f, 1.0f);
         if (fill_w > 0.5f) {
-            r.draw_quad({ BAR_X,             BAR_Y           },
-                        { BAR_X + fill_w,    BAR_Y           },
-                        { BAR_X + fill_w,    BAR_Y + BAR_H   },
-                        { BAR_X,             BAR_Y + BAR_H   },
+            r.draw_quad({BAR_X, BAR_Y}, {BAR_X + fill_w, BAR_Y},
+                        {BAR_X + fill_w, BAR_Y + BAR_H}, {BAR_X, BAR_Y + BAR_H},
                         COLOR_SCORE_BAR);
+            const f32 sweep = std::fmod(f32(platform::time_seconds()) * 220.0f,
+                                        BAR_W + 80.0f) - 40.0f;
+            if (sweep > 0.0f && sweep < fill_w + 40.0f) {
+                r.set_layer(render::Renderer::Layer::Additive);
+                r.draw_quad({BAR_X + sweep - 30.0f, BAR_Y},
+                            {BAR_X + sweep + 8.0f, BAR_Y},
+                            {BAR_X + sweep + 8.0f, BAR_Y + BAR_H},
+                            {BAR_X + sweep - 30.0f, BAR_Y + BAR_H},
+                            with_alpha(COLOR_SCORE_TICK, 80));
+                r.set_layer(render::Renderer::Layer::Alpha);
+            }
         }
+
         for (int i = 1; i <= 3; ++i) {
             const f32 tx = BAR_X + BAR_W * f32(i) * 0.25f;
-            r.draw_line({ tx, BAR_Y - 3 }, { tx, BAR_Y + BAR_H + 3 },
-                        1.5f, COLOR_SCORE_TICK);
+            r.draw_line({tx, BAR_Y - 3}, {tx, BAR_Y + BAR_H + 3}, 1.5f,
+                        with_alpha(COLOR_SCORE_TICK, 140));
         }
     }
 
+    // --- Room progress: hexagons ---
     {
         constexpr f32 CX = VIRTUAL_W * 0.5f;
-        constexpr f32 CY = 40.0f;
+        constexpr f32 CY = 50.0f;
         const int DOTS = ROOM_COUNT + 1;
-        const f32 SPACING = (DOTS <= 6) ? 24.0f : 16.0f;
-        constexpr f32 R = 6.0f;
+        const f32 SPACING = (DOTS <= 6) ? 30.0f : 22.0f;
         const f32 start_x = CX - f32(DOTS - 1) * SPACING * 0.5f;
+
         for (int i = 0; i < DOTS; ++i) {
-            const Vec2 c { start_x + f32(i) * SPACING, CY };
-            const bool is_boss_dot = (i == DOTS - 1);
+            const Vec2 c {start_x + f32(i) * SPACING, CY};
+            const bool is_boss = (i == DOTS - 1);
             bool completed = false, current = false;
-            if (is_boss_dot) {
+            if (is_boss) {
                 completed = warden_defeated_;
                 current   = warden_active_ && warden_.alive;
             } else {
                 completed = (rooms_cleared_ & (1u << i)) != 0;
                 current   = (i == current_room_);
             }
-            const Color dot_color = is_boss_dot ? COLOR_ENEMY_EDGE : COLOR_CORE_EDGE;
-            if (completed && !current) r.draw_circle(c, R, with_alpha(dot_color, 140), 12);
-            else if (current)   { r.draw_circle(c, R, dot_color, 12);
-                                  r.draw_ring(c, R + 2.0f, R + 4.0f, dot_color, 16); }
-            else                r.draw_ring(c, R - 1.0f, R, with_alpha(dot_color, 100), 12);
+            const Color dc = is_boss ? COLOR_ENEMY_EDGE : COLOR_CORE_EDGE;
+
+            render::icon_hex(r, c, 12.0f, 0, with_alpha(dc, 120));
+
+            if (completed && !current) {
+                render::icon_hex(r, c, 8.0f, with_alpha(dc, 200), 0);
+            } else if (current) {
+                const f32 p = 0.5f + 0.5f * std::sin(platform::time_seconds() * 4.0f);
+                render::icon_hex(r, c, 8.0f, dc, 0);
+                r.set_layer(render::Renderer::Layer::Additive);
+                render::icon_hex(r, c, 14.0f + p * 3.0f, 0,
+                                 with_alpha(dc, u8(80 + 80 * p)));
+                r.set_layer(render::Renderer::Layer::Alpha);
+            }
         }
     }
-
     if (warden_active_ && warden_.alive) {
         constexpr f32 BAR_W = 700.0f;
         constexpr f32 BAR_H = 18.0f;
