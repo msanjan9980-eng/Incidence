@@ -71,60 +71,167 @@ static void menu_horizon_grid(render::Renderer& r, f32 t, f32 a) {
 // ---------------------------------------------------------------------------
 // Chromatic title "INCIDENCE" with glow halo.
 // ---------------------------------------------------------------------------
+// Orbit sparks around a selected element.
+static void menu_orbit_sparks(render::Renderer& r, Vec2 c, f32 rx, f32 ry,
+                              f32 t, Color col, f32 a, int n = 10) {
+    for (int i = 0; i < n; ++i) {
+        const f32 ang = t * 1.4f + TAU * f32(i) / f32(n);
+        const Vec2 p { c.x + std::cos(ang) * rx, c.y + std::sin(ang) * ry };
+        const f32 pulse = 0.5f + 0.5f * std::sin(t * 4.0f + f32(i) * 0.9f);
+        r.set_layer(render::Renderer::Layer::Additive);
+        r.draw_circle(p, 10.0f + pulse * 5.0f,
+                      with_alpha(col, u8(a * (35.0f + 25.0f * pulse))), 12);
+        r.set_layer(render::Renderer::Layer::Alpha);
+        r.draw_circle(p, 2.0f + pulse * 1.2f, with_alpha(col, u8(a * 240.0f)), 8);
+        const f32 trail = ang - 0.14f;
+        const Vec2 q { c.x + std::cos(trail) * rx, c.y + std::sin(trail) * ry };
+        r.draw_circle(q, 1.5f, with_alpha(col, u8(a * 130.0f)), 6);
+    }
+}
 static void menu_title(render::Renderer& r, Vec2 c, f32 t, f32 a) {
+    const char* title = "INCIDENCE";
+    const int   len   = 9;
+    const f32   size  = 15.0f;
+    const f32   adv   = r.text_width("XX", size) - r.text_width("X", size);
+    const f32   total = r.text_width(title, size);
+    f32         px    = c.x - total * 0.5f;
+
+    // Halo behind title
     const f32 pulse = 0.9f + 0.1f * std::sin(t * 1.8f);
-    r.draw_text_centered({c.x + 3.0f, c.y + 3.0f}, "INCIDENCE", 15.0f,
-                         with_alpha(COLOR_ENEMY_EDGE, u8(a * 40)));
-    r.draw_text_centered({c.x - 3.0f, c.y - 3.0f}, "INCIDENCE", 15.0f,
-                         with_alpha(COLOR_CORE_INNER, u8(a * 50)));
     r.set_layer(render::Renderer::Layer::Additive);
-    r.draw_circle(c, 500.0f * pulse, with_alpha(COLOR_CORE_EDGE, u8(a * 22)), 48);
+    r.draw_circle(c, 500.0f * pulse, with_alpha(COLOR_CORE_EDGE, u8(a * 22.0f)), 48);
     r.set_layer(render::Renderer::Layer::Alpha);
-    r.draw_text_centered(c, "INCIDENCE", 15.0f,
-                         with_alpha(COLOR_CORE_INNER, u8(a * 255)));
-    r.draw_text_centered({c.x, c.y + 140.0f}, "R E F L E C T   O R   D I E", 2.6f,
-                         with_alpha(COLOR_FACET_EDGE, u8(a * 200)));
-    r.draw_line({c.x - 320.0f, c.y + 180.0f}, {c.x + 320.0f, c.y + 180.0f}, 1.0f,
-                with_alpha(COLOR_CORE_EDGE, u8(a * 100)));
-    r.draw_quad({c.x, c.y + 176.0f}, {c.x + 5.0f, c.y + 180.0f},
-                {c.x, c.y + 184.0f}, {c.x - 5.0f, c.y + 180.0f},
-                with_alpha(COLOR_CORE_EDGE, u8(a * 220)));
+
+    // Letters
+    for (int i = 0; i < len; ++i) {
+        const f32 enter = clamp((t - (0.30f + f32(i) * 0.055f)) / 0.40f, 0.0f, 1.0f);
+        if (enter <= 0.0f) { px += adv; continue; }
+        const f32 ease    = 1.0f - (1.0f - enter) * (1.0f - enter);
+        const f32 slide_y = (1.0f - ease) * -200.0f;
+        const f32 jitter  = std::sin(t * 3.0f + f32(i) * 1.3f) * 1.5f;
+        char one[2] = { title[i], 0 };
+
+        r.draw_text({px + 3.0f, c.y + 3.0f + slide_y + jitter}, one, size,
+                    with_alpha(COLOR_ENEMY_EDGE, u8(a * enter * 40.0f)));
+        r.draw_text({px - 3.0f, c.y - 3.0f + slide_y - jitter}, one, size,
+                    with_alpha(COLOR_CORE_INNER, u8(a * enter * 50.0f)));
+
+        r.set_layer(render::Renderer::Layer::Additive);
+        r.draw_circle({px + adv * 0.5f, c.y + slide_y + size * 3.5f},
+                      60.0f * enter,
+                      with_alpha(COLOR_CORE_INNER, u8(a * enter * 45.0f)), 24);
+        r.set_layer(render::Renderer::Layer::Alpha);
+
+        r.draw_text({px, c.y + slide_y + jitter}, one, size,
+                    with_alpha(COLOR_CORE_INNER, u8(a * enter * 255.0f)));
+        px += adv;
+    }
+
+    // Subtitle letter stagger
+    const char* sub  = "REFLECT OR DIE";
+    const int   slen = 14;
+    const f32   ssz  = 2.6f;
+    const f32   sadv = r.text_width("XX", ssz) - r.text_width("X", ssz);
+    const f32   sw   = r.text_width(sub, ssz);
+    f32         sx   = c.x - sw * 0.5f;
+    for (int i = 0; i < slen; ++i) {
+        const f32 enter = clamp((t - (1.20f + f32(i) * 0.028f)) / 0.30f, 0.0f, 1.0f);
+        if (enter > 0.0f) {
+            const f32 slide = (1.0f - enter) * 40.0f;
+            char one[2] = { sub[i], 0 };
+            r.draw_text({sx + slide, c.y + 140.0f}, one, ssz,
+                        with_alpha(COLOR_FACET_EDGE, u8(a * enter * 210.0f)));
+        }
+        sx += sadv;
+    }
+
+    // Divider draw-out
+    const f32 div_age = clamp((t - 1.80f) / 0.50f, 0.0f, 1.0f);
+    if (div_age > 0.0f) {
+        const f32 dhw = 320.0f * div_age;
+        r.draw_line({c.x - dhw, c.y + 180.0f}, {c.x + dhw, c.y + 180.0f}, 1.0f,
+                    with_alpha(COLOR_CORE_EDGE, u8(a * 100.0f * div_age)));
+    }
+
+    // Diamond pop
+    const f32 dia_age = clamp((t - 2.05f) / 0.30f, 0.0f, 1.0f);
+    if (dia_age > 0.0f) {
+        const f32 ds     = 5.0f * dia_age;
+        const f32 pulse2 = 0.5f + 0.5f * std::sin(t * 4.0f);
+        r.draw_quad({c.x, c.y + 180.0f - ds}, {c.x + ds, c.y + 180.0f},
+                    {c.x, c.y + 180.0f + ds}, {c.x - ds, c.y + 180.0f},
+                    with_alpha(COLOR_CORE_EDGE,
+                               u8(a * (180.0f + 60.0f * pulse2) * dia_age)));
+    }
 }
 
 // ---------------------------------------------------------------------------
 // One menu item with hover brackets and glow.
 // ---------------------------------------------------------------------------
 static void menu_item(render::Renderer& r, Vec2 c, const char* label,
-                      bool selected, bool enabled, f32 t, f32 a) {
+                      bool selected, bool enabled, f32 t, f32 a, f32 appear_t) {
     const f32 pulse = 0.5f + 0.5f * std::sin(t * 5.0f);
     const Color col = enabled
         ? (selected ? COLOR_CORE_INNER : COLOR_CORE_EDGE)
         : COLOR_FACET_EDGE;
-    const u8 al = enabled ? u8(a * 255.0f) : u8(a * 110.0f);
+    const u8  al    = enabled ? u8(a * 255.0f) : u8(a * 110.0f);
+
+    const f32 enter = clamp(appear_t / 0.45f, 0.0f, 1.0f);
+    if (enter <= 0.0f) return;
+    const f32 ease    = 1.0f - (1.0f - enter) * (1.0f - enter);
+    const f32 slide_x = (1.0f - ease) * 60.0f;
+    const u8  falpha  = u8(f32(al) * enter);
+
     if (selected && enabled) {
+        menu_orbit_sparks(r, {c.x, c.y + 10.0f}, 240.0f, 60.0f, t,
+                          COLOR_CORE_EDGE, a, 10);
+
+        const f32 bw  = 260.0f;
+        const f32 bh  = 30.0f;
+        const f32 jit = std::sin(t * 6.0f) * 3.0f;
+        const f32 ix  = c.x - bw - 40.0f + jit;
+        const f32 rx  = c.x + bw + 40.0f - jit;
+        const f32 arm = 20.0f + pulse * 4.0f;
+        const Color bc = with_alpha(COLOR_CORE_INNER, u8(a * 240.0f));
+
+        // Left bracket
+        r.draw_line({ix, c.y - bh + 4.0f}, {ix, c.y + bh + 4.0f}, 3.0f, bc);
+        r.draw_line({ix, c.y - bh + 4.0f}, {ix + arm, c.y - bh + 4.0f}, 3.0f, bc);
+        r.draw_line({ix, c.y + bh + 4.0f}, {ix + arm, c.y + bh + 4.0f}, 3.0f, bc);
+        for (int i = 0; i < 3; ++i) {
+            const f32 ty = c.y - bh + 12.0f + f32(i) * 10.0f;
+            const f32 ta = a * (140.0f + 60.0f * std::sin(t * 5.0f + f32(i)));
+            r.draw_line({ix - 6.0f, ty}, {ix - 12.0f, ty}, 1.5f,
+                        with_alpha(COLOR_CORE_EDGE, u8(ta)));
+        }
+        // Right bracket
+        r.draw_line({rx, c.y - bh + 4.0f}, {rx, c.y + bh + 4.0f}, 3.0f, bc);
+        r.draw_line({rx, c.y - bh + 4.0f}, {rx - arm, c.y - bh + 4.0f}, 3.0f, bc);
+        r.draw_line({rx, c.y + bh + 4.0f}, {rx - arm, c.y + bh + 4.0f}, 3.0f, bc);
+        for (int i = 0; i < 3; ++i) {
+            const f32 ty = c.y - bh + 12.0f + f32(i) * 10.0f;
+            const f32 ta = a * (140.0f + 60.0f * std::sin(t * 5.0f + f32(i) + 1.7f));
+            r.draw_line({rx + 6.0f, ty}, {rx + 12.0f, ty}, 1.5f,
+                        with_alpha(COLOR_CORE_EDGE, u8(ta)));
+        }
+
+        // Underline bar
+        const f32 uw = 180.0f + pulse * 20.0f;
         r.set_layer(render::Renderer::Layer::Additive);
-        r.draw_circle({c.x, c.y + 10.0f}, 180.0f + pulse * 20.0f,
-                      with_alpha(COLOR_CORE_EDGE, u8(a * 30.0f)), 36);
+        r.draw_quad({c.x - uw, c.y + bh + 14.0f}, {c.x + uw, c.y + bh + 14.0f},
+                    {c.x + uw, c.y + bh + 16.0f}, {c.x - uw, c.y + bh + 16.0f},
+                    with_alpha(COLOR_CORE_EDGE, u8(a * (100.0f + 60.0f * pulse))));
         r.set_layer(render::Renderer::Layer::Alpha);
-        const f32 bw = 240.0f;
-        const f32 bh = 26.0f;
-        const f32 ix = c.x - bw - 40.0f + std::sin(t * 6.0f) * 3.0f;
-        r.draw_line({ix, c.y - bh + 4.0f}, {ix, c.y + bh + 4.0f}, 3.0f,
-                    with_alpha(COLOR_CORE_INNER, u8(a * 220.0f)));
-        r.draw_line({ix, c.y - bh + 4.0f}, {ix + 18.0f, c.y - bh + 4.0f}, 3.0f,
-                    with_alpha(COLOR_CORE_INNER, u8(a * 220.0f)));
-        r.draw_line({ix, c.y + bh + 4.0f}, {ix + 18.0f, c.y + bh + 4.0f}, 3.0f,
-                    with_alpha(COLOR_CORE_INNER, u8(a * 220.0f)));
-        const f32 rx = c.x + bw + 40.0f - std::sin(t * 6.0f) * 3.0f;
-        r.draw_line({rx, c.y - bh + 4.0f}, {rx, c.y + bh + 4.0f}, 3.0f,
-                    with_alpha(COLOR_CORE_INNER, u8(a * 220.0f)));
-        r.draw_line({rx, c.y - bh + 4.0f}, {rx - 18.0f, c.y - bh + 4.0f}, 3.0f,
-                    with_alpha(COLOR_CORE_INNER, u8(a * 220.0f)));
-        r.draw_line({rx, c.y + bh + 4.0f}, {rx - 18.0f, c.y + bh + 4.0f}, 3.0f,
-                    with_alpha(COLOR_CORE_INNER, u8(a * 220.0f)));
+
+        // Glow behind text
+        r.set_layer(render::Renderer::Layer::Additive);
+        r.draw_circle({c.x, c.y + 10.0f}, 200.0f + pulse * 25.0f,
+                      with_alpha(COLOR_CORE_EDGE, u8(a * 38.0f)), 40);
+        r.set_layer(render::Renderer::Layer::Alpha);
     }
+
     const f32 sz = selected ? 4.0f : 3.2f;
-    r.draw_text_centered(c, label, sz, with_alpha(col, al));
+    r.draw_text_centered({c.x + slide_x, c.y}, label, sz, with_alpha(col, falpha));
 }
 
 // ---------------------------------------------------------------------------
@@ -132,32 +239,67 @@ static void menu_item(render::Renderer& r, Vec2 c, const char* label,
 // ---------------------------------------------------------------------------
 static void menu_save_panel(render::Renderer& r, Vec2 c, f32 w, f32 h,
                             bool has_save, int room, int level, f32 a, f32 t) {
-    r.draw_quad({c.x - w*0.5f, c.y - h*0.5f}, {c.x + w*0.5f, c.y - h*0.5f},
-                {c.x + w*0.5f, c.y + h*0.5f}, {c.x - w*0.5f, c.y + h*0.5f},
-                rgba(8, 22, 32, u8(a * 200.0f)));
-    r.draw_line({c.x - w*0.5f, c.y - h*0.5f}, {c.x + w*0.5f, c.y - h*0.5f},
-                1.5f, with_alpha(COLOR_CORE_EDGE, u8(a * 200.0f)));
-    r.draw_line({c.x - w*0.5f, c.y - h*0.5f}, {c.x - w*0.5f, c.y + h*0.5f},
-                1.5f, with_alpha(COLOR_CORE_EDGE, u8(a * 200.0f)));
-    r.draw_text({c.x - w*0.5f + 14.0f, c.y - h*0.5f + 10.0f}, "SAVE DATA",
-                1.8f, with_alpha(COLOR_CORE_EDGE, u8(a * 200.0f)));
-    r.draw_line({c.x - w*0.5f + 14.0f, c.y - h*0.5f + 40.0f},
-                {c.x + w*0.5f - 14.0f, c.y - h*0.5f + 40.0f}, 1.0f,
+    const f32 reveal = clamp(t / 0.55f, 0.0f, 1.0f);
+    if (reveal <= 0.0f) return;
+    const f32 ease = 1.0f - (1.0f - reveal) * (1.0f - reveal);
+    const f32 ww   = w * ease;
+    const f32 x0   = c.x - ww * 0.5f;
+    const f32 x1   = c.x + ww * 0.5f;
+    const f32 y0   = c.y - h  * 0.5f;
+    const f32 y1   = c.y + h  * 0.5f;
+
+    r.draw_quad({x0 + 8.0f, y0 + 8.0f}, {x1 + 8.0f, y0 + 8.0f},
+                {x1 + 8.0f, y1 + 8.0f}, {x0 + 8.0f, y1 + 8.0f},
+                rgba(0, 0, 0, u8(a * 170.0f)));
+    r.draw_quad({x0, y0}, {x1, y0}, {x1, y1}, {x0, y1},
+                rgba(8, 22, 32, u8(a * 225.0f)));
+    r.draw_line({x0, y0}, {x1, y0}, 1.5f, with_alpha(COLOR_CORE_EDGE, u8(a * 200.0f)));
+    r.draw_line({x0, y0}, {x0, y1}, 1.5f, with_alpha(COLOR_CORE_EDGE, u8(a * 200.0f)));
+    r.draw_line({x1, y1}, {x0, y1}, 1.5f, with_alpha(COLOR_CORE_EDGE, u8(a * 200.0f)));
+    r.draw_line({x1, y0}, {x1, y1}, 1.5f, with_alpha(COLOR_CORE_EDGE, u8(a * 200.0f)));
+
+    r.draw_text({x0 + 14.0f, y0 + 10.0f}, "SAVE DATA", 1.8f,
+                with_alpha(COLOR_CORE_EDGE, u8(a * 200.0f)));
+    r.draw_line({x0 + 14.0f, y0 + 40.0f}, {x1 - 14.0f, y0 + 40.0f}, 1.0f,
                 with_alpha(COLOR_CORE_EDGE, u8(a * 90.0f)));
+
     if (has_save) {
         char buf[64];
         std::snprintf(buf, sizeof(buf), "LV %d", level);
-        r.draw_text({c.x - w*0.5f + 14.0f, c.y - h*0.5f + 52.0f}, buf, 2.2f,
+        r.draw_text({x0 + 14.0f, y0 + 52.0f}, buf, 2.2f,
                     with_alpha(COLOR_CORE_INNER, u8(a * 240.0f)));
         std::snprintf(buf, sizeof(buf), "ROOM %02d", room);
-        r.draw_text({c.x - w*0.5f + 14.0f, c.y - h*0.5f + 82.0f}, buf, 2.2f,
+        r.draw_text({x0 + 14.0f, y0 + 82.0f}, buf, 2.2f,
                     with_alpha(COLOR_FACET_EDGE, u8(a * 200.0f)));
+
         const f32 blink = 0.5f + 0.5f * std::sin(t * 3.0f);
-        r.draw_circle({c.x + w*0.5f - 24.0f, c.y - h*0.5f + 24.0f}, 6.0f,
+        r.set_layer(render::Renderer::Layer::Additive);
+        r.draw_circle({x1 - 24.0f, y0 + 24.0f}, 14.0f + blink * 6.0f,
+                      with_alpha(COLOR_CORE_INNER, u8(a * (60.0f + 40.0f * blink))), 16);
+        r.set_layer(render::Renderer::Layer::Alpha);
+        r.draw_circle({x1 - 24.0f, y0 + 24.0f}, 6.0f,
                       with_alpha(COLOR_CORE_INNER, u8(a * (120.0f + 100.0f * blink))), 12);
+
+        for (int i = 0; i < 8; ++i) {
+            const f32 bx = x1 - 130.0f + f32(i) * 12.0f;
+            const f32 bp = 0.5f + 0.5f * std::sin(t * 2.5f + f32(i) * 0.7f);
+            const f32 bh2 = 6.0f + bp * 22.0f;
+            r.draw_quad({bx, y1 - 24.0f - bh2}, {bx + 8.0f, y1 - 24.0f - bh2},
+                        {bx + 8.0f, y1 - 24.0f}, {bx, y1 - 24.0f},
+                        with_alpha(COLOR_CORE_EDGE, u8(a * (80.0f + 100.0f * bp))));
+        }
     } else {
-        r.draw_text({c.x - w*0.5f + 14.0f, c.y - h*0.5f + 56.0f}, "NO DATA",
-                    2.2f, with_alpha(COLOR_FACET_EDGE, u8(a * 130.0f)));
+        r.draw_text({x0 + 14.0f, y0 + 56.0f}, "NO DATA", 2.2f,
+                    with_alpha(COLOR_FACET_EDGE, u8(a * 130.0f)));
+    }
+
+    if (reveal < 1.0f) {
+        const f32 sy = y0 + (y1 - y0) * reveal;
+        r.set_layer(render::Renderer::Layer::Additive);
+        r.draw_quad({x0, sy - 2.0f}, {x1, sy - 2.0f},
+                    {x1, sy + 2.0f}, {x0, sy + 2.0f},
+                    with_alpha(COLOR_CORE_INNER, u8((1.0f - reveal) * 180.0f)));
+        r.set_layer(render::Renderer::Layer::Alpha);
     }
 }
 
@@ -295,7 +437,8 @@ void App::draw_main_menu(render::Renderer& r) const {
     const f32 item_dy = 82.0f;
     for (int i = 0; i < 3; ++i) {
         const Vec2 c { item_x, item_y0 + f32(i) * item_dy };
-        menu_item(r, c, items[i], menu_cursor_ == i, enabled[i], t, a);
+        const f32 appear_t = t - (1.4f + f32(i) * 0.14f);
+        menu_item(r, c, items[i], menu_cursor_ == i, enabled[i], t, a, appear_t);
     }
 
     // Panels
@@ -303,10 +446,30 @@ void App::draw_main_menu(render::Renderer& r) const {
                     has_save, sroom, slevel, a, t);
     menu_bottom_bar(r, a);
 
-    const char* quote = "\"You have no gun. You have a normal vector.\"";
-    const f32 qw = r.text_width(quote, 2.0f);
-    r.draw_text({f32(VIRTUAL_W) - 60.0f - qw, 780.0f}, quote, 2.0f,
-                with_alpha(COLOR_FACET_EDGE, u8(a * 180.0f)));
+    {
+        const char* quote = "\"You have no gun. You have a normal vector.\"";
+        const int   qlen  = int(std::strlen(quote));
+        const int   shown = int(clamp((t - 1.9f) * 28.0f, 0.0f, f32(qlen)));
+        if (shown > 0) {
+            char qbuf[96];
+            for (int i = 0; i < shown; ++i) qbuf[i] = quote[i];
+            qbuf[shown] = 0;
+            const f32 qw = r.text_width(quote, 2.0f);
+            const f32 qx = f32(VIRTUAL_W) - 60.0f - qw;
+            const f32 qy = 780.0f;
+            r.draw_text({qx, qy}, qbuf, 2.0f,
+                        with_alpha(COLOR_FACET_EDGE, u8(a * 200.0f)));
+            if (shown < qlen) {
+                const f32 pw    = r.text_width(qbuf, 2.0f);
+                const f32 blink = 0.5f + 0.5f * std::sin(t * 9.0f);
+                if (blink > 0.35f) {
+                    r.draw_quad({qx + pw + 1.0f, qy}, {qx + pw + 9.0f, qy},
+                                {qx + pw + 9.0f, qy + 20.0f}, {qx + pw + 1.0f, qy + 20.0f},
+                                with_alpha(COLOR_CORE_INNER, u8(a * 220.0f)));
+                }
+            }
+        }
+    }
 
     // Slow accent ring behind title
     r.set_layer(render::Renderer::Layer::Additive);
