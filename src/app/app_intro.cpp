@@ -1,5 +1,6 @@
 #include "app/app.hpp"
 #include "render/fx.hpp"
+#include "render/field.hpp"
 
 #include <cmath>
 #include <cstdio>
