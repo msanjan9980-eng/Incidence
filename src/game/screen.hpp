@@ -13,6 +13,8 @@ namespace inc::game {
 // ---------------------------------------------------------------------------
 enum class Screen {
     MainMenu,
+    ProfileCreate,
+    ProfileSelect,
     Intro,
     Title,
     Playing,

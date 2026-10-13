@@ -4,6 +4,7 @@
 #include "platform/platform.hpp"
 #include "render/renderer.hpp"
 #include "game/world.hpp"
+#include "game/profile.hpp"
 #include "render/particles.hpp"
 #include "game/screen.hpp"
 #include "game/log.hpp"
@@ -36,6 +37,8 @@ private:
     void draw_room_intro(render::Renderer& r) const;
     void draw_main_menu(render::Renderer& r) const;
     void draw_gameplay_hud(render::Renderer& r) const;
+    void draw_profile_create(render::Renderer& r) const;
+    void draw_profile_select(render::Renderer& r) const;
 
     void draw_intro(render::Renderer& r) const;
     void draw_intro_background(render::Renderer& r,
@@ -62,6 +65,11 @@ private:
     f32           intro_time_   = 0.0f;
     f32           main_menu_time_ = 0.0f;
     int           menu_cursor_    = 0;
+    char          profile_input_name_[20] = {};
+    int           profile_input_len_   = 0;
+    game::ProfileInfo profile_list_[game::PROFILE_MAX] = {};
+    int           profile_list_count_  = 0;
+    int           profile_cursor_      = 0;
     fx::ParticleSystem menu_particles_;
     f32           title_time_   = 0.0f;
     f32           victory_time_ = 0.0f;

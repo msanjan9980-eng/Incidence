@@ -46,6 +46,7 @@ add_executable(incidence
     src/app/app_menu.cpp
     src/app/app_panels.cpp
     src/app/app_hud.cpp
+    src/app/app_profile.cpp
     src/platform/platform.cpp
     src/render/renderer.cpp
     src/audio/audio.cpp
@@ -75,6 +76,7 @@ set_source_files_properties(
     src/app/app_menu.cpp
     src/app/app_panels.cpp
     src/app/app_hud.cpp
+    src/app/app_profile.cpp
     src/platform/platform.cpp
     src/render/renderer.cpp
     src/audio/audio.cpp
