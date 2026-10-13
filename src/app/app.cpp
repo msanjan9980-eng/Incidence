@@ -279,6 +279,54 @@ void App::step(f32 dt) {
                 world_map_open_       = false;
             }
 
+            // --- Character sheet: 1/2/3/4 spend stat points ---
+            if (character_sheet_open_) {
+                int idx = -1;
+                if (in.key_pressed[static_cast<int>(platform::Key::Num1)]) idx = 0;
+                if (in.key_pressed[static_cast<int>(platform::Key::Num2)]) idx = 1;
+                if (in.key_pressed[static_cast<int>(platform::Key::Num3)]) idx = 2;
+                if (in.key_pressed[static_cast<int>(platform::Key::Num4)]) idx = 3;
+                if (idx >= 0 && world_.character().spend_point(idx)) {
+                    game::save_game("save.sav", world_.character(),
+                                    world_.room_index(),
+                                    world_.rooms_visited());
+                }
+            }
+
+            // --- Skill tree: arrows to navigate, Enter to learn ---
+            if (skill_tree_open_) {
+                if (in.key_pressed[static_cast<int>(platform::Key::Up)]) {
+                    if (skill_cursor_row_ > 0) --skill_cursor_row_;
+                }
+                if (in.key_pressed[static_cast<int>(platform::Key::Down)]) {
+                    if (skill_cursor_row_ < 4) ++skill_cursor_row_;
+                }
+                if (in.key_pressed[static_cast<int>(platform::Key::Left)]) {
+                    if (skill_cursor_branch_ > 0) --skill_cursor_branch_;
+                }
+                if (in.key_pressed[static_cast<int>(platform::Key::Right)]) {
+                    if (skill_cursor_branch_ < 2) ++skill_cursor_branch_;
+                }
+                if (in.key_pressed[static_cast<int>(platform::Key::Enter)]) {
+                    const int sid = skill_cursor_branch_ * 5 + skill_cursor_row_;
+                    if (world_.character().learn_skill(game::SkillId(sid))) {
+                        game::save_game("save.sav", world_.character(),
+                                        world_.room_index(),
+                                        world_.rooms_visited());
+                    }
+                }
+            }
+
+            // --- Log archive: up/down ---
+            if (log_archive_open_) {
+                if (in.key_pressed[static_cast<int>(platform::Key::Up)]) {
+                    if (archive_cursor_ > 0) --archive_cursor_;
+                }
+                if (in.key_pressed[static_cast<int>(platform::Key::Down)]) {
+                    if (archive_cursor_ < game::LOG_COUNT - 1) ++archive_cursor_;
+                }
+            }
+
             if (world_map_open_) {
                 if (in.key_pressed[static_cast<int>(platform::Key::Left)]) {
                     if (map_cursor_ > 0) --map_cursor_;
