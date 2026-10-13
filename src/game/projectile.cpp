@@ -1,4 +1,4 @@
-﻿#include "game/projectile.hpp"
+#include "game/projectile.hpp"
 #include "game/drone.hpp"
 #include "game/room.hpp"
 #include "render/renderer.hpp"
@@ -102,9 +102,9 @@ void Projectile::draw_predicted(render::Renderer& r,
             {
                 const f32 b_angle = std::atan2(to_b.y, to_b.x);
                 const f32 rel     = wrap_pi(b_angle - drone.heading);
-                if (std::fabs(rel) <= Drone::SHIELD_SPAN * 0.5f) {
-                    const f32 facet_span = Drone::SHIELD_SPAN / f32(Drone::SHIELD_FACETS);
-                    int facet = int((rel + Drone::SHIELD_SPAN * 0.5f) / facet_span);
+                if (std::fabs(rel) <= drone.shield_span * 0.5f) {
+                    const f32 facet_span = drone.shield_span / f32(Drone::SHIELD_FACETS);
+                    int facet = int((rel + drone.shield_span * 0.5f) / facet_span);
                     if (facet < 0) facet = 0;
                     if (facet >= Drone::SHIELD_FACETS) facet = Drone::SHIELD_FACETS - 1;
 

@@ -2,19 +2,27 @@
 #include "render/renderer.hpp"
 #include "platform/platform.hpp"
 #include "audio/audio.hpp"
+#include "game/save.hpp"
 
 #include <cmath>
 #include <cstdio>
 
 namespace inc::game {
 
-// ---------------------------------------------------------------------------
-// Lifecycle
-// ---------------------------------------------------------------------------
+// XP value awarded per enemy type on kill.
+static int xp_for_enemy(EnemyType type) {
+    switch (type) {
+        case EnemyType::Lancer: return 40;
+        case EnemyType::Banker: return 55;
+        case EnemyType::Lead:   return 65;
+    }
+    return 40;
+}
 
 World::World() { reset(); }
 
 void World::reset() {
+    character_       = Character{};
     player_hp_       = 3;
     kills_           = 0;
     score_           = 0;
@@ -24,10 +32,24 @@ void World::reset() {
     warden_defeated_ = false;
     death_screen_timer_   = 0.0f;
     victory_screen_timer_ = 0.0f;
+    levelup_banner_timer_ = 0.0f;
+    levelup_banner_level_ = 1;
     load_room(0);
 }
 
+void World::jump_to_room(int index) {
+    if (index < 0) index = 0;
+    if (index >= ROOM_COUNT) index = ROOM_COUNT - 1;
+    player_dead_     = false;
+    warden_defeated_ = false;
+    warden_active_   = false;
+    levelup_banner_timer_ = 0.0f;
+    load_room(index);
+}
+
 void World::load_room(int index) {
+    player_hp_ = 3;
+
     const Room& r = room_at(index);
     current_room_ = index;
     warden_active_ = false;
@@ -42,10 +64,12 @@ void World::load_room(int index) {
         spawn_turret(r.enemies[i]);
     }
 
-    drone_.position = r.drone_start;
-    drone_.velocity = { 0.0f, 0.0f };
-    drone_.heading  = -HALF_PI;
-    drone_.spin     = 0.0f;
+    drone_.position    = r.drone_start;
+    drone_.velocity    = { 0.0f, 0.0f };
+    drone_.heading     = -HALF_PI;
+    drone_.spin        = 0.0f;
+    drone_.dash_cd     = 0.0f;
+    drone_.shield_span = character_.shield_span_rad();
 
     for (auto& p : projectiles_) p.alive = false;
     for (auto& f : flashes_)     f.alive = false;
@@ -59,6 +83,7 @@ void World::load_room(int index) {
 }
 
 void World::spawn_warden() {
+    player_hp_ = 3;
     warden_.reset();
     warden_active_ = true;
     for (auto& p : projectiles_) p.alive = false;
@@ -124,12 +149,28 @@ void World::spawn_flash(Vec2 pos) {
     }
 }
 
+void World::award_kill_xp(EnemyType type) {
+    const int amount = xp_for_enemy(type);
+    const int gained = character_.add_xp(amount);
+    if (gained > 0) {
+        levelup_banner_timer_ = 2.0f;
+        levelup_banner_level_ = character_.level;
+        // Auto-save on level-up so progress is never lost.
+        save_game("save.sav", character_, current_room_);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Simulation
 // ---------------------------------------------------------------------------
 
 void World::step(f32 dt, const platform::InputState& input) {
-    // If the run is over, freeze the sim. App handles screen transitions.
+    // Banner timer ticks even while paused-ish states run.
+    if (levelup_banner_timer_ > 0.0f) {
+        levelup_banner_timer_ -= dt;
+        if (levelup_banner_timer_ < 0.0f) levelup_banner_timer_ = 0.0f;
+    }
+
     if (player_dead_)     { death_screen_timer_   += dt; return; }
     if (warden_defeated_) { victory_screen_timer_ += dt; return; }
 
@@ -137,12 +178,12 @@ void World::step(f32 dt, const platform::InputState& input) {
         return input.key_down[static_cast<int>(k)];
     };
 
-    drone_.step(dt,
+    drone_.step(dt, character_,
                 kc(platform::Key::Left),  kc(platform::Key::Right),
                 kc(platform::Key::Up),    kc(platform::Key::Down),
-                kc(platform::Key::Q),     kc(platform::Key::E));
+                kc(platform::Key::Q),     kc(platform::Key::E),
+                kc(platform::Key::Space));
 
-    // ---- Warden or turrets ----------------------------------------------
     if (warden_active_) {
         step_warden(dt);
     } else {
@@ -164,21 +205,18 @@ void World::step(f32 dt, const platform::InputState& input) {
         }
     }
 
-    // ---- Projectiles -----------------------------------------------------
     for (auto& p : projectiles_) {
         if (!p.alive) continue;
         p.step(dt);
         resolve_collisions(p);
     }
 
-    // ---- Flashes ---------------------------------------------------------
     for (auto& f : flashes_) {
         if (!f.alive) continue;
         f.age += dt;
         if (f.age >= HitFlash::LIFETIME) f.alive = false;
     }
 
-    // ---- Room progression ------------------------------------------------
     if (warden_active_) {
         if (!warden_.alive && warden_death_timer_ < 0.0f) {
             warden_death_timer_ = 0.0f;
@@ -196,7 +234,7 @@ void World::step(f32 dt, const platform::InputState& input) {
         }
         if (alive_count == 0) {
             room_clear_timer_ = 0.0f;
-            std::fprintf(stderr, "[world] room cleared — advancing\n");
+            std::fprintf(stderr, "[world] room cleared - advancing\n");
             std::fflush(stderr);
         }
     } else {
@@ -205,7 +243,10 @@ void World::step(f32 dt, const platform::InputState& input) {
             if (current_room_ == ROOM_COUNT - 1) {
                 spawn_warden();
             } else {
-                load_room(current_room_ + 1);
+                const int next = current_room_ + 1;
+                load_room(next);
+                // Auto-save on room advance.
+                save_game("save.sav", character_, next);
             }
         }
     }
@@ -279,6 +320,7 @@ void World::step_warden(f32 dt) {
 // ---------------------------------------------------------------------------
 // Collision helpers
 // ---------------------------------------------------------------------------
+
 bool World::collide_with_walls(Projectile& p) {
     if (p.wall_bounces_left <= 0) return false;
     for (int i = 0; i < wall_count_; ++i) {
@@ -319,7 +361,6 @@ bool World::resolve_warden_collisions(Projectile& p) {
         warden_.damage(1);
         if (warden_.phase != prev_phase) audio::play_warden_phase();
         spawn_flash(p.pos);
-
         if (warden_.alive) {
             const int b = (p.bounces < 6) ? p.bounces : 6;
             score_ += 50 * (1 << b);
@@ -328,6 +369,12 @@ bool World::resolve_warden_collisions(Projectile& p) {
             score_ += 5000;
             warden_defeated_ = true;
             audio::play_victory();
+            const int gained = character_.add_xp(2500);
+            if (gained > 0) {
+                levelup_banner_timer_ = 2.0f;
+                levelup_banner_level_ = character_.level;
+            }
+            save_game("save.sav", character_, current_room_);
             std::fprintf(stderr, "[world] WARDEN DEFEATED\n");
             std::fflush(stderr);
         }
@@ -338,7 +385,7 @@ bool World::resolve_warden_collisions(Projectile& p) {
 }
 
 bool World::resolve_collisions(Projectile& p) {
-    // ---- Screen boundary -------------------------------------------------
+    // ---- Screen boundary ----------------------------------------------
     if (p.wall_bounces_left > 0) {
         bool bounced = false;
         if (p.pos.x < p.radius)              { p.pos.x = p.radius;              p.vel.x = -p.vel.x; bounced = true; }
@@ -356,10 +403,9 @@ bool World::resolve_collisions(Projectile& p) {
     }
 
     collide_with_walls(p);
-
     if (resolve_warden_collisions(p)) return true;
 
-    // ---- Shield ----------------------------------------------------------
+    // ---- Shield --------------------------------------------------------
     {
         Vec2 to_bullet = p.pos - drone_.position;
         const f32 dist  = to_bullet.length();
@@ -368,19 +414,32 @@ bool World::resolve_collisions(Projectile& p) {
         {
             const f32 bullet_angle = std::atan2(to_bullet.y, to_bullet.x);
             const f32 relative     = wrap_pi(bullet_angle - drone_.heading);
-            if (std::fabs(relative) <= Drone::SHIELD_SPAN * 0.5f) {
-                const f32 facet_span = Drone::SHIELD_SPAN / f32(Drone::SHIELD_FACETS);
-                int shield_facet = int((relative + Drone::SHIELD_SPAN * 0.5f) / facet_span);
-                if (shield_facet < 0) shield_facet = 0;
-                if (shield_facet >= Drone::SHIELD_FACETS) shield_facet = Drone::SHIELD_FACETS - 1;
-                const Vec2 n = drone_.facet_normal(shield_facet);
+            const f32 half_span    = drone_.shield_span * 0.5f;
+
+            if (std::fabs(relative) <= half_span) {
+                const f32 facet_span = drone_.shield_span / f32(Drone::SHIELD_FACETS);
+                int facet = int((relative + half_span) / facet_span);
+                if (facet < 0) facet = 0;
+                if (facet >= Drone::SHIELD_FACETS) facet = Drone::SHIELD_FACETS - 1;
+
+                const Vec2 n = drone_.facet_normal(facet);
                 if (p.vel.dot(n) < 0.0f) {
                     const f32 cos_i = clamp(-p.vel.normalized().dot(n), -1.0f, 1.0f);
                     last_incidence_deg_ = rad_to_deg(std::acos(cos_i));
                     audio::play_shield_reflect(last_incidence_deg_);
+
                     p.vel = reflect(p.vel, n);
+
+                    // CHARGE stat multiplies the reflected bullet's speed.
+                    p.vel *= character_.reflect_multiplier();
+                    // Cap to avoid runaway acceleration from repeated hits.
+                    const f32 out_speed = p.vel.length();
+                    constexpr f32 MAX_OUT = 2200.0f;
+                    if (out_speed > MAX_OUT) p.vel = p.vel * (MAX_OUT / out_speed);
+
                     Vec2 dir_out = to_bullet * (1.0f / (dist < 1e-3f ? 1.0f : dist));
                     p.pos = drone_.position + dir_out * (Drone::SHIELD_R_OUTER + p.radius + 1.0f);
+
                     ++p.bounces;
                     spawn_flash(p.pos);
                     return false;
@@ -389,21 +448,19 @@ bool World::resolve_collisions(Projectile& p) {
         }
     }
 
-    // ---- Core -----------------------------------------------------------
+    // ---- Core ----------------------------------------------------------
     {
         Vec2 to_bullet = p.pos - drone_.position;
         if (to_bullet.length() < Drone::CORE_RADIUS + p.radius) {
             p.alive = false;
             player_hp_--;
             audio::play_player_hit();
-            if (player_hp_ <= 0) {
-                player_dead_ = true;
-            }
+            if (player_hp_ <= 0) player_dead_ = true;
             return true;
         }
     }
 
-    // ---- Turrets --------------------------------------------------------
+    // ---- Turrets -------------------------------------------------------
     for (int i = 0; i < turret_count_; ++i) {
         Turret& t = turrets_[i];
         if (!t.alive) continue;
@@ -417,6 +474,7 @@ bool World::resolve_collisions(Projectile& p) {
                 audio::play_enemy_death();
                 const int b = (p.bounces < 6) ? p.bounces : 6;
                 score_ += 100 * (1 << b);
+                award_kill_xp(t.type);
             }
             return true;
         }
@@ -428,6 +486,7 @@ bool World::resolve_collisions(Projectile& p) {
 // ---------------------------------------------------------------------------
 // Drawing
 // ---------------------------------------------------------------------------
+
 void World::draw(render::Renderer& r) const {
     r.set_layer(render::Renderer::Layer::Alpha);
 
@@ -477,7 +536,7 @@ void World::draw(render::Renderer& r) const {
     for (const auto& p : projectiles_) p.draw(r);
     drone_.draw(r);
 
-    // ---- Additive glow ---------------------------------------------------
+    // ---- Additive glow -------------------------------------------------
     r.set_layer(render::Renderer::Layer::Additive);
 
     for (const auto& p : projectiles_) {
@@ -502,22 +561,69 @@ void World::draw(render::Renderer& r) const {
         r.draw_circle(t.pos, t.radius + 16.0f, with_alpha(glow, 30), 22);
     }
 
-    // ---- HUD -------------------------------------------------------------
+    // ---- HUD -----------------------------------------------------------
     r.set_layer(render::Renderer::Layer::Alpha);
 
+    // HP bars (top-left).
     for (int i = 0; i < player_hp_; ++i) {
         const f32 x = 30.0f + f32(i) * 26.0f;
         const f32 y = 30.0f;
         r.draw_quad({ x,      y      }, { x + 20, y      },
                     { x + 20, y + 12 }, { x,      y + 12 }, COLOR_CORE_EDGE);
     }
-    for (int i = 0; i < kills_; ++i) {
+
+    // Kills (below HP).
+    for (int i = 0; i < kills_ && i < 20; ++i) {
         const f32 x = 30.0f + f32(i) * 16.0f;
         const f32 y = 56.0f;
         r.draw_quad({ x,      y      }, { x + 10, y      },
                     { x + 10, y + 10 }, { x,      y + 10 }, COLOR_ENEMY_EDGE);
     }
 
+    // ---- Level + XP bar (below kills) ---------------------------------
+    {
+        const f32 LVL_X = 30.0f;
+        const f32 LVL_Y = 86.0f;
+
+        char lv_buf[16];
+        std::snprintf(lv_buf, sizeof(lv_buf), "LV %d", character_.level);
+        r.draw_text({ LVL_X, LVL_Y }, lv_buf, 2.2f, COLOR_CORE_INNER);
+
+        // XP bar to the right of "LV N".
+        const f32 bar_x = LVL_X + 90.0f;
+        const f32 bar_y = LVL_Y + 4.0f;
+        const f32 bar_w = 160.0f;
+        const f32 bar_h = 10.0f;
+
+        r.draw_quad({ bar_x,         bar_y         },
+                    { bar_x + bar_w, bar_y         },
+                    { bar_x + bar_w, bar_y + bar_h },
+                    { bar_x,         bar_y + bar_h },
+                    with_alpha(COLOR_CORE_EDGE, 40));
+
+        const f32 fill = bar_w * character_.xp_progress();
+        if (fill > 0.5f) {
+            r.draw_quad({ bar_x,        bar_y         },
+                        { bar_x + fill, bar_y         },
+                        { bar_x + fill, bar_y + bar_h },
+                        { bar_x,        bar_y + bar_h },
+                        COLOR_CORE_EDGE);
+        }
+
+        // Stat-points pulse indicator if any available.
+        if (character_.stat_points > 0) {
+            const f32 pulse = 0.5f + 0.5f * std::sin(platform::time_seconds() * 6.0f);
+            const Vec2 c { bar_x + bar_w + 20.0f, bar_y + bar_h * 0.5f };
+            r.draw_circle(c, 6.0f + pulse * 2.0f,
+                          with_alpha(COLOR_CORE_INNER,
+                                     u8(180 + 75 * pulse)), 14);
+            r.draw_ring(c, 9.0f, 11.0f,
+                        with_alpha(COLOR_CORE_EDGE,
+                                   u8(120 + 100 * pulse)), 16);
+        }
+    }
+
+    // ---- Score bar (top-right) -----------------------------------------
     {
         constexpr f32 BAR_X = 1580.0f;
         constexpr f32 BAR_Y = 30.0f;
@@ -546,6 +652,7 @@ void World::draw(render::Renderer& r) const {
         }
     }
 
+    // ---- Room indicator (top-center) -----------------------------------
     {
         constexpr f32 CX = VIRTUAL_W * 0.5f;
         constexpr f32 CY = 40.0f;
@@ -553,7 +660,6 @@ void World::draw(render::Renderer& r) const {
         const f32 SPACING = (DOTS <= 6) ? 24.0f : 16.0f;
         constexpr f32 R = 6.0f;
         const f32 start_x = CX - f32(DOTS - 1) * SPACING * 0.5f;
-
         for (int i = 0; i < DOTS; ++i) {
             const Vec2 c { start_x + f32(i) * SPACING, CY };
             const bool is_boss_dot = (i == DOTS - 1);
@@ -573,6 +679,7 @@ void World::draw(render::Renderer& r) const {
         }
     }
 
+    // ---- Warden HP bar --------------------------------------------------
     if (warden_active_ && warden_.alive) {
         constexpr f32 BAR_W = 700.0f;
         constexpr f32 BAR_H = 18.0f;
@@ -602,12 +709,37 @@ void World::draw(render::Renderer& r) const {
         }
     }
 
+    // ---- Room-clear pulse ----------------------------------------------
     if (!warden_active_ && room_clear_timer_ >= 0.0f) {
         const f32 t = clamp(room_clear_timer_ / 2.0f, 0.0f, 1.0f);
         const f32 radius = 30.0f + t * 700.0f;
         const u8  a = u8((1.0f - t) * 200.0f);
         r.draw_ring(drone_.position, radius - 4.0f, radius + 4.0f,
                     with_alpha(COLOR_CORE_INNER, a), 40);
+    }
+
+    // ---- Level-up banner -----------------------------------------------
+    if (levelup_banner_timer_ > 0.0f) {
+        const f32 t = 1.0f - (levelup_banner_timer_ / 2.0f);   // 0 -> 1 over 2 s
+        const f32 alpha = clamp(1.0f - t * t, 0.0f, 1.0f);      // fade out
+
+        const f32 cx = VIRTUAL_W * 0.5f;
+        const f32 cy = VIRTUAL_H * 0.42f;
+
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "LEVEL %d", levelup_banner_level_);
+
+        r.set_layer(render::Renderer::Layer::Alpha);
+        r.draw_text_centered({ cx, cy }, buf, 7.5f,
+                             with_alpha(COLOR_CORE_INNER, u8(alpha * 255.0f)));
+        r.draw_text_centered({ cx, cy + 90.0f }, "+1 STAT POINT",
+                             2.4f,
+                             with_alpha(COLOR_FACET_EDGE, u8(alpha * 220.0f)));
+
+        r.set_layer(render::Renderer::Layer::Additive);
+        r.draw_circle({ cx, cy + 30.0f }, 320.0f,
+                      with_alpha(COLOR_CORE_EDGE, u8(alpha * 40.0f)), 40);
+        r.set_layer(render::Renderer::Layer::Alpha);
     }
 }
 

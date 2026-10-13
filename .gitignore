@@ -48,3 +48,5 @@ desktop.ini
 logs/
 saves/
 *.log
+# Save game
+save.sav

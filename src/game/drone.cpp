@@ -1,62 +1,79 @@
 ﻿#include "game/drone.hpp"
+#include "game/character.hpp"
 #include "render/renderer.hpp"
 
 #include <cmath>
 
 namespace inc::game {
 
-void Drone::step(f32 dt,
+void Drone::step(f32 dt, const Character& ch,
                  bool key_left, bool key_right,
                  bool key_up,   bool key_down,
-                 bool key_q,    bool key_e)
+                 bool key_q,    bool key_e,
+                 bool key_dash)
 {
-    // ---- Movement: accelerate in the requested direction -----------------
+    // ---- Read stats ---------------------------------------------------
+    shield_span = ch.shield_span_rad();
+    const f32 spin_speed = ch.spin_speed();
+
+    // ---- Dash cooldown ------------------------------------------------
+    if (dash_cd > 0.0f) dash_cd -= dt;
+
+    // ---- Movement -----------------------------------------------------
     f32 ax = 0.0f, ay = 0.0f;
     if (key_left)  ax -= 1.0f;
     if (key_right) ax += 1.0f;
     if (key_up)    ay -= 1.0f;
     if (key_down)  ay += 1.0f;
 
-    // Normalize diagonal so two arrows don't give 1.41x speed.
     const f32 alen = std::sqrt(ax * ax + ay * ay);
     if (alen > 0.0f) { ax /= alen; ay /= alen; }
 
     velocity.x += ax * ACCEL * dt;
     velocity.y += ay * ACCEL * dt;
 
-    // Exponential drag, framerate-independent.
     const f32 drag_factor = std::pow(DRAG, dt);
     velocity.x *= drag_factor;
     velocity.y *= drag_factor;
 
-    // Speed cap.
     const f32 speed = velocity.length();
-    if (speed > MAX_SPEED) {
-        velocity = velocity * (MAX_SPEED / speed);
+    if (speed > MAX_SPEED) velocity = velocity * (MAX_SPEED / speed);
+
+    // ---- Dash ---------------------------------------------------------
+    if (key_dash && dash_cd <= 0.0f) {
+        Vec2 dir;
+        if (alen > 0.0f) {
+            dir = Vec2{ ax, ay };
+        } else if (velocity.length_sq() > 100.0f) {
+            dir = velocity.normalized();
+        } else {
+            dir = Vec2::from_angle(heading);
+        }
+        velocity += dir * ch.dash_impulse();
+        dash_cd = ch.dash_cooldown();
     }
 
-    // Integrate.
+    // ---- Integrate ----------------------------------------------------
     position += velocity * dt;
 
-    // Bounce off virtual-canvas edges. The "radius" we bounce at is the
-    // shield outer radius so the shield stays fully on-screen.
+    // ---- Wall bounce --------------------------------------------------
     constexpr f32 R = SHIELD_R_OUTER;
-    if (position.x < R)                   { position.x = R;                   velocity.x = -velocity.x; }
-    else if (position.x > VIRTUAL_W - R)  { position.x = VIRTUAL_W - R;        velocity.x = -velocity.x; }
-    if (position.y < R)                   { position.y = R;                   velocity.y = -velocity.y; }
-    else if (position.y > VIRTUAL_H - R)  { position.y = VIRTUAL_H - R;        velocity.y = -velocity.y; }
+    if (position.x < R)                  { position.x = R;                  velocity.x = -velocity.x; }
+    else if (position.x > VIRTUAL_W - R) { position.x = VIRTUAL_W - R;       velocity.x = -velocity.x; }
+    if (position.y < R)                  { position.y = R;                  velocity.y = -velocity.y; }
+    else if (position.y > VIRTUAL_H - R) { position.y = VIRTUAL_H - R;       velocity.y = -velocity.y; }
 
-    // ---- Rotation --------------------------------------------------------
-    if (key_q) spin = -SPIN_SPEED;
-    else if (key_e) spin = SPIN_SPEED;
-    else spin *= std::pow(0.02f, dt);  // rapid spin-down when released
+    // ---- Rotation -----------------------------------------------------
+    if (key_q) spin = -spin_speed;
+    else if (key_e) spin = spin_speed;
+    else spin *= std::pow(0.02f, dt);
 
     heading = wrap_pi(heading + spin * dt);
 }
 
 void Drone::facet_angles(int i, f32& out_a0, f32& out_a1) const {
-    const f32 step = SHIELD_SPAN / static_cast<f32>(SHIELD_FACETS);
-    const f32 base = heading - SHIELD_SPAN * 0.5f;
+    const f32 step = shield_span / static_cast<f32>(SHIELD_FACETS);
+    const f32 base = heading - shield_span * 0.5f;
     out_a0 = base + static_cast<f32>(i)     * step;
     out_a1 = base + static_cast<f32>(i + 1) * step;
 }
@@ -69,7 +86,7 @@ Vec2 Drone::facet_normal(int i) const {
 }
 
 void Drone::draw(render::Renderer& r) const {
-    // ---- Engine glow: a faint trailing line opposite the velocity --------
+    // ---- Engine trail --------------------------------------------------
     const f32 speed = velocity.length();
     if (speed > 40.0f) {
         Vec2 back = -(velocity * (1.0f / speed));
@@ -78,7 +95,7 @@ void Drone::draw(render::Renderer& r) const {
                     6.0f, COLOR_ENGINE_GLOW);
     }
 
-    // ---- Shield facets (drawn UNDER the core) ----------------------------
+    // ---- Shield facets -------------------------------------------------
     for (int i = 0; i < SHIELD_FACETS; ++i) {
         f32 a0, a1;
         facet_angles(i, a0, a1);
@@ -91,31 +108,32 @@ void Drone::draw(render::Renderer& r) const {
         const Vec2 pout0 = position + dir0 * SHIELD_R_OUTER;
         const Vec2 pout1 = position + dir1 * SHIELD_R_OUTER;
 
-        // Facet body (semi-transparent fill).
         r.draw_quad(pin0, pin1, pout1, pout0, COLOR_FACET_FILL);
 
-        // Facet edges — inner chord, outer chord, two radial caps.
         r.draw_line(pin0,  pin1,  2.5f, COLOR_FACET_EDGE);
         r.draw_line(pout0, pout1, 2.5f, COLOR_FACET_EDGE);
         r.draw_line(pin0,  pout0, 1.2f, COLOR_FACET_EDGE);
         r.draw_line(pin1,  pout1, 1.2f, COLOR_FACET_EDGE);
 
-        // Facet normal — a short vector pointing OUT from the facet midpoint.
         const Vec2 n_dir = facet_normal(i);
-        const Vec2 n_a = position + n_dir * (SHIELD_R_OUTER + 3.0f);
-        const Vec2 n_b = position + n_dir * (SHIELD_R_OUTER + 16.0f);
-        r.draw_line(n_a, n_b, 2.0f, COLOR_FACET_NORMAL);
+        r.draw_line(position + n_dir * (SHIELD_R_OUTER + 3.0f),
+                    position + n_dir * (SHIELD_R_OUTER + 16.0f),
+                    2.0f, COLOR_FACET_NORMAL);
     }
 
-    // ---- Core (drawn ON TOP) ---------------------------------------------
-    // Outer glow
+    // ---- Core ---------------------------------------------------------
     r.draw_circle(position, CORE_RADIUS + 8.0f, COLOR_CORE_GLOW, 24);
-    // Solid body
     r.draw_circle(position, CORE_RADIUS,        COLOR_CORE_FILL, 20);
-    // Bright edge ring
-    r.draw_ring(position, CORE_RADIUS, CORE_RADIUS + 2.5f, COLOR_CORE_EDGE, 28);
-    // Inner highlight dot
+    r.draw_ring  (position, CORE_RADIUS, CORE_RADIUS + 2.5f, COLOR_CORE_EDGE, 28);
     r.draw_circle(position, 4.5f, COLOR_CORE_INNER, 12);
+
+    // ---- Dash cooldown ring --------------------------------------------
+    if (dash_cd > 0.0f) {
+        const f32 frac = clamp(1.0f - dash_cd * 0.6f, 0.0f, 1.0f);
+        r.draw_arc_ring(position, CORE_RADIUS + 18.0f, CORE_RADIUS + 22.0f,
+                        -HALF_PI, -HALF_PI + frac * TAU,
+                        with_alpha(COLOR_CORE_EDGE, 160), 20);
+    }
 }
 
 } // namespace inc::game

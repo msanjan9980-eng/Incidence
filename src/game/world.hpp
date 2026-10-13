@@ -9,6 +9,7 @@
 #include "game/projectile.hpp"
 #include "game/room.hpp"
 #include "game/warden.hpp"
+#include "game/character.hpp"
 #include "game/screen.hpp"
 
 namespace inc::render { class Renderer; }
@@ -28,6 +29,7 @@ public:
     World();
 
     void reset();
+    void jump_to_room(int index);
     void step(f32 dt, const platform::InputState& input);
     void draw(render::Renderer& r) const;
 
@@ -38,6 +40,9 @@ public:
     [[nodiscard]] bool warden_active() const noexcept { return warden_active_; }
     [[nodiscard]] bool player_dead() const noexcept { return player_dead_; }
     [[nodiscard]] bool warden_defeated() const noexcept { return warden_defeated_; }
+
+    [[nodiscard]] Character&       character()       noexcept { return character_; }
+    [[nodiscard]] const Character& character() const noexcept { return character_; }
 
 private:
     void load_room(int index);
@@ -54,12 +59,15 @@ private:
     bool resolve_collisions(Projectile& p);
     bool collide_with_walls(Projectile& p);
 
-    // ---- Content -------------------------------------------------------
+    void award_kill_xp(EnemyType type);
+
+    // ---- Content ------------------------------------------------------
     Drone      drone_;
     Turret     turrets_[8];
     Projectile projectiles_[256];
     HitFlash   flashes_[32];
     Warden     warden_;
+    Character  character_;
 
     Wall       walls_[32];
     int        wall_count_     = 0;
@@ -67,7 +75,7 @@ private:
     int        current_room_   = 0;
     bool       warden_active_  = false;
 
-    // ---- Player state --------------------------------------------------
+    // ---- Player state -------------------------------------------------
     int  player_hp_ = 3;
     int  kills_     = 0;
     i32  score_     = 0;
@@ -80,6 +88,10 @@ private:
     f32  death_screen_timer_  = 0.0f;
     f32  victory_screen_timer_= 0.0f;
     f32  last_incidence_deg_  = 0.0f;
+
+    // ---- Level-up banner ----------------------------------------------
+    f32  levelup_banner_timer_ = 0.0f;
+    int  levelup_banner_level_ = 1;
 };
 
 } // namespace inc::game
