@@ -5,9 +5,6 @@ project(incidence
     DESCRIPTION "You have no gun. You have a normal vector."
     LANGUAGES C CXX)
 
-# ---------------------------------------------------------------------------
-# Global settings
-# ---------------------------------------------------------------------------
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -21,17 +18,13 @@ endif()
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
 # ---------------------------------------------------------------------------
-# Compiler flags — C++ only
-#
-# Determinism discipline: no fast-math, no FMA contraction, no exceptions,
-# no RTTI.
+# Compiler flags
 # ---------------------------------------------------------------------------
 set(INCIDENCE_CXX_FLAGS "")
 if(MSVC)
     list(APPEND INCIDENCE_CXX_FLAGS
         /W4 /permissive- /Zc:__cplusplus /Zc:preprocessor
-        /fp:strict /fp:except-
-        /GR- /EHs-c- /utf-8)
+        /fp:strict /fp:except- /GR- /EHs-c- /utf-8)
 else()
     list(APPEND INCIDENCE_CXX_FLAGS
         -Wall -Wextra -Wpedantic
@@ -40,18 +33,10 @@ else()
         -fvisibility=hidden)
 endif()
 
-# ---------------------------------------------------------------------------
-# Compiler flags — C only (sokol_impl.c)
-#
-# sokol's C code is portable but does not compile cleanly under -Wpedantic;
-# we suppress that one warning family for the C translation unit only.
-# ---------------------------------------------------------------------------
 set(INCIDENCE_C_FLAGS "")
 if(NOT MSVC)
-    list(APPEND INCIDENCE_C_FLAGS
-        -Wall -Wextra
-        -Wno-pedantic
-        -fno-fast-math -ffp-contract=off)
+    list(APPEND INCIDENCE_C_FLAGS -Wall -Wextra -Wno-pedantic
+                                  -fno-fast-math -ffp-contract=off)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -66,37 +51,34 @@ add_executable(incidence
     src/main.cpp
     src/sokol_impl.c
     src/app/app.cpp
-    src/platform/platform.cpp)
+    src/platform/platform.cpp
+    src/render/renderer.cpp
+    src/game/triangle.cpp)
 
 target_include_directories(incidence PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${SOKOL_INCLUDE_DIR})
 
-# Apply C++ flags to C++ sources, C flags to C sources.
 set_source_files_properties(
     src/main.cpp
     src/app/app.cpp
     src/platform/platform.cpp
+    src/render/renderer.cpp
+    src/game/triangle.cpp
     PROPERTIES COMPILE_OPTIONS "${INCIDENCE_CXX_FLAGS}")
 
 set_source_files_properties(
     src/sokol_impl.c
     PROPERTIES COMPILE_OPTIONS "${INCIDENCE_C_FLAGS}")
 
-# ---------------------------------------------------------------------------
-# Platform-specific system libraries
-# ---------------------------------------------------------------------------
 if(WIN32)
     target_link_libraries(incidence PRIVATE
         user32 gdi32 ole32 d3d11 dxgi)
 elseif(APPLE)
     target_link_libraries(incidence PRIVATE
-        "-framework Cocoa"
-        "-framework IOKit"
-        "-framework CoreAudio"
-        "-framework AudioToolbox"
-        "-framework Metal"
-        "-framework QuartzCore")
+        "-framework Cocoa" "-framework IOKit"
+        "-framework CoreAudio" "-framework AudioToolbox"
+        "-framework Metal" "-framework QuartzCore")
 elseif(UNIX AND NOT EMSCRIPTEN)
     find_package(X11 REQUIRED)
     find_package(OpenGL REQUIRED)
@@ -104,9 +86,6 @@ elseif(UNIX AND NOT EMSCRIPTEN)
         X11::X11 OpenGL::GL dl m pthread)
 endif()
 
-# ---------------------------------------------------------------------------
-# Copy assets next to the binary on native platforms
-# ---------------------------------------------------------------------------
 if(NOT EMSCRIPTEN)
     add_custom_command(TARGET incidence POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory

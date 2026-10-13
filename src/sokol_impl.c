@@ -4,11 +4,16 @@
  * The single translation unit where sokol's implementation lives.
  * Every other file includes the sokol headers WITHOUT SOKOL_IMPL.
  *
- * Backend selection: on Windows, use the D3D11 graphics API.
+ * SOKOL_GLCORE: use desktop OpenGL 4.x on Windows. This lets us write GLSL
+ * shaders directly (D3D11 would require HLSL or sokol-shdc cross-compilation).
+ *
+ * SOKOL_GLCORE works everywhere the D3D11 backend does. We can switch to
+ * D3D11 + sokol-shdc later when we need to squeeze the last bit of
+ * performance out of the Windows build.
  * ------------------------------------------------------------------------- */
 
 #if defined(_WIN32)
-  #define SOKOL_D3D11
+  #define SOKOL_GLCORE
 #endif
 
 /* --- sokol_app: window, input, lifecycle --------------------------------- */
