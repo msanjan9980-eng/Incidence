@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "core/math.hpp"
 #include "platform/platform.hpp"
@@ -45,6 +45,8 @@ private:
     void draw_log_archive(render::Renderer& r) const;
     void draw_quest_log(render::Renderer& r) const;
     void draw_world_map(render::Renderer& r) const;
+    void draw_pause_menu(render::Renderer& r) const;
+    void draw_action_toast(render::Renderer& r) const;
 
     void check_quests();
 
@@ -68,6 +70,12 @@ private:
     bool          log_archive_open_     = false;
     bool          quest_log_open_       = false;
     bool          world_map_open_       = false;
+
+    bool          paused_          = false;
+    int           pause_cursor_    = 0;
+    f32           action_toast_t_  = 0.0f;
+    char          action_toast_text_[64] = {};
+    Color         action_toast_color_ = 0;
 
     int           skill_cursor_branch_  = 0;
     int           skill_cursor_row_     = 0;

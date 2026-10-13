@@ -1,5 +1,6 @@
 #include "game/world.hpp"
 #include "render/renderer.hpp"
+#include "render/icons.hpp"
 #include "platform/platform.hpp"
 #include "audio/audio.hpp"
 #include "game/save.hpp"
@@ -753,16 +754,14 @@ void World::draw(render::Renderer& r) const {
     r.set_layer(render::Renderer::Layer::Alpha);
 
     for (int i = 0; i < player_hp_; ++i) {
-        const f32 x = 30.0f + f32(i) * 26.0f;
-        const f32 y = 30.0f;
-        r.draw_quad({ x,      y      }, { x + 20, y      },
-                    { x + 20, y + 12 }, { x,      y + 12 }, COLOR_CORE_EDGE);
+        const f32 x = 42.0f + f32(i) * 34.0f;
+        const f32 y = 44.0f;
+        render::icon_heart(r, {x, y}, 26.0f, COLOR_CORE_INNER);
     }
     for (int i = 0; i < kills_ && i < 20; ++i) {
-        const f32 x = 30.0f + f32(i) * 16.0f;
-        const f32 y = 56.0f;
-        r.draw_quad({ x,      y      }, { x + 10, y      },
-                    { x + 10, y + 10 }, { x,      y + 10 }, COLOR_ENEMY_EDGE);
+        const f32 x = 46.0f + f32(i) * 20.0f;
+        const f32 y = 78.0f;
+        render::icon_bullet(r, {x, y}, 12.0f, COLOR_ENEMY_EDGE);
     }
 
     {

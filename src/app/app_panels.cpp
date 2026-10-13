@@ -1,4 +1,5 @@
-﻿#include "app/app.hpp"
+#include "app/app.hpp"
+#include "render/icons.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -9,9 +10,10 @@ namespace inc {
 void App::draw_character_sheet(render::Renderer& r) const {
     const game::Character& ch = world_.character();
 
+    render::draw_menu_background(r, f32(platform::time_seconds()), COLOR_CORE_EDGE, 110);
     r.set_layer(render::Renderer::Layer::Alpha);
     r.draw_quad({ 0, 0 }, { VIRTUAL_W, 0 }, { VIRTUAL_W, VIRTUAL_H }, { 0, VIRTUAL_H },
-                with_alpha(COLOR_VOID, 220));
+                with_alpha(COLOR_VOID, 140));
 
     const f32 cx = VIRTUAL_W * 0.5f;
     const f32 panel_top = VIRTUAL_H * 0.14f;
@@ -119,9 +121,10 @@ void App::draw_character_sheet(render::Renderer& r) const {
 void App::draw_skill_tree(render::Renderer& r) const {
     const game::Character& ch = world_.character();
 
+    render::draw_menu_background(r, f32(platform::time_seconds()), COLOR_CORE_EDGE, 110);
     r.set_layer(render::Renderer::Layer::Alpha);
     r.draw_quad({ 0, 0 }, { VIRTUAL_W, 0 }, { VIRTUAL_W, VIRTUAL_H }, { 0, VIRTUAL_H },
-                with_alpha(COLOR_VOID, 220));
+                with_alpha(COLOR_VOID, 140));
 
     const f32 cx = VIRTUAL_W * 0.5f;
     const f32 panel_top = VIRTUAL_H * 0.10f;
@@ -231,9 +234,10 @@ void App::draw_skill_tree(render::Renderer& r) const {
 void App::draw_equipment_panel(render::Renderer& r) const {
     const game::Character& ch = world_.character();
 
+    render::draw_menu_background(r, f32(platform::time_seconds()), COLOR_CORE_EDGE, 110);
     r.set_layer(render::Renderer::Layer::Alpha);
     r.draw_quad({ 0, 0 }, { VIRTUAL_W, 0 }, { VIRTUAL_W, VIRTUAL_H }, { 0, VIRTUAL_H },
-                with_alpha(COLOR_VOID, 220));
+                with_alpha(COLOR_VOID, 140));
 
     const f32 cx = VIRTUAL_W * 0.5f;
     const f32 panel_top = VIRTUAL_H * 0.16f;
@@ -400,9 +404,10 @@ void App::draw_log_overlay(render::Renderer& r) const {
 void App::draw_log_archive(render::Renderer& r) const {
     const auto& lg = logs_;
 
+    render::draw_menu_background(r, f32(platform::time_seconds()), COLOR_CORE_EDGE, 110);
     r.set_layer(render::Renderer::Layer::Alpha);
     r.draw_quad({ 0, 0 }, { VIRTUAL_W, 0 }, { VIRTUAL_W, VIRTUAL_H }, { 0, VIRTUAL_H },
-                with_alpha(COLOR_VOID, 220));
+                with_alpha(COLOR_VOID, 140));
 
     const f32 cx = VIRTUAL_W * 0.5f;
     const f32 panel_top = VIRTUAL_H * 0.10f;
@@ -462,9 +467,10 @@ void App::draw_log_archive(render::Renderer& r) const {
 void App::draw_quest_log(render::Renderer& r) const {
     const auto& qs = quests_;
 
+    render::draw_menu_background(r, f32(platform::time_seconds()), COLOR_CORE_EDGE, 110);
     r.set_layer(render::Renderer::Layer::Alpha);
     r.draw_quad({ 0, 0 }, { VIRTUAL_W, 0 }, { VIRTUAL_W, VIRTUAL_H }, { 0, VIRTUAL_H },
-                with_alpha(COLOR_VOID, 220));
+                with_alpha(COLOR_VOID, 140));
 
     const f32 cx = VIRTUAL_W * 0.5f;
     const f32 panel_top = VIRTUAL_H * 0.20f;
@@ -538,10 +544,11 @@ void App::draw_quest_log(render::Renderer& r) const {
 namespace inc {
 
 void App::draw_world_map(render::Renderer& r) const {
+    render::draw_menu_background(r, f32(platform::time_seconds()), COLOR_CORE_EDGE, 110);
     r.set_layer(render::Renderer::Layer::Alpha);
     r.draw_quad({0.0f, 0.0f}, {VIRTUAL_W, 0.0f},
                 {VIRTUAL_W, VIRTUAL_H}, {0.0f, VIRTUAL_H},
-                rgba(5, 14, 18, 220));
+                rgba(5, 14, 18, 140));
 
     r.draw_text_centered({VIRTUAL_W * 0.5f, 60.0f},
                          "HALCYON STATION - RING MAP", 4.0f, COLOR_CORE_INNER);

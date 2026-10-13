@@ -1,5 +1,6 @@
 #include "app/app.hpp"
 #include "audio/audio.hpp"
+#include "render/icons.hpp"
 #include "game/save.hpp"
 #include "game/room.hpp"
 
@@ -172,6 +173,40 @@ void App::step(f32 dt) {
     }
 
     case game::Screen::Playing: {
+        if (action_toast_t_ > 0.0f) {
+            action_toast_t_ -= dt;
+            if (action_toast_t_ < 0.0f) action_toast_t_ = 0.0f;
+        }
+
+        if (paused_) {
+            if (in.key_pressed[static_cast<int>(platform::Key::Escape)]) {
+                paused_ = false;
+                break;
+            }
+            if (in.key_pressed[static_cast<int>(platform::Key::Up)]) {
+                if (pause_cursor_ > 0) --pause_cursor_;
+            }
+            if (in.key_pressed[static_cast<int>(platform::Key::Down)]) {
+                if (pause_cursor_ < 2) ++pause_cursor_;
+            }
+            if (in.key_pressed[static_cast<int>(platform::Key::Enter)]) {
+                if (pause_cursor_ == 0) {
+                    paused_ = false;
+                } else if (pause_cursor_ == 1) {
+                    world_.reset();
+                    logs_ = game::LogState{};
+                    quests_ = game::QuestState{};
+                    last_room_shown_   = -1;
+                    last_warden_state_ = false;
+                    room_intro_timer_  = -1.0f;
+                    paused_ = false;
+                } else {
+                    running_ = false;
+                }
+            }
+            break;
+        }
+
         if (logs_.playing()) {
             const int idx = logs_.active_index;
             const int body_len = int(std::strlen(game::log_at(idx).body));
@@ -269,6 +304,12 @@ void App::step(f32 dt) {
             equipment_panel_open_ || log_archive_open_ ||
             quest_log_open_       || world_map_open_;
 
+        if (!any_panel && in.key_pressed[static_cast<int>(platform::Key::Escape)]) {
+            paused_ = true;
+            pause_cursor_ = 0;
+            break;
+        }
+
         if (any_panel) {
             if (in.key_pressed[static_cast<int>(platform::Key::Escape)]) {
                 character_sheet_open_ = false;
@@ -286,10 +327,22 @@ void App::step(f32 dt) {
                 if (in.key_pressed[static_cast<int>(platform::Key::Num2)]) idx = 1;
                 if (in.key_pressed[static_cast<int>(platform::Key::Num3)]) idx = 2;
                 if (in.key_pressed[static_cast<int>(platform::Key::Num4)]) idx = 3;
-                if (idx >= 0 && world_.character().spend_point(idx)) {
-                    game::save_game("save.sav", world_.character(),
-                                    world_.room_index(),
-                                    world_.rooms_visited());
+                if (idx >= 0) {
+                    static const char* STAT_NAMES[4] = {"ARC","FOCUS","CHARGE","DRIFT"};
+                    if (world_.character().spend_point(idx)) {
+                        std::snprintf(action_toast_text_, sizeof(action_toast_text_),
+                                      "+1 %s", STAT_NAMES[idx]);
+                        action_toast_color_ = COLOR_CORE_INNER;
+                        action_toast_t_ = 0.9f;
+                        game::save_game("save.sav", world_.character(),
+                                        world_.room_index(),
+                                        world_.rooms_visited());
+                    } else {
+                        std::snprintf(action_toast_text_, sizeof(action_toast_text_),
+                                      "%s IS MAXED OR NO POINTS", STAT_NAMES[idx]);
+                        action_toast_color_ = COLOR_ENEMY_EDGE;
+                        action_toast_t_ = 0.9f;
+                    }
                 }
             }
 
@@ -309,10 +362,20 @@ void App::step(f32 dt) {
                 }
                 if (in.key_pressed[static_cast<int>(platform::Key::Enter)]) {
                     const int sid = skill_cursor_branch_ * 5 + skill_cursor_row_;
+                    const game::SkillNode& node = game::skill_node(game::SkillId(sid));
                     if (world_.character().learn_skill(game::SkillId(sid))) {
+                        std::snprintf(action_toast_text_, sizeof(action_toast_text_),
+                                      "LEARNED: %s", node.name);
+                        action_toast_color_ = COLOR_CORE_INNER;
+                        action_toast_t_ = 1.4f;
                         game::save_game("save.sav", world_.character(),
                                         world_.room_index(),
                                         world_.rooms_visited());
+                    } else {
+                        std::snprintf(action_toast_text_, sizeof(action_toast_text_),
+                                      "CANNOT LEARN: %s", node.name);
+                        action_toast_color_ = COLOR_ENEMY_EDGE;
+                        action_toast_t_ = 1.0f;
                     }
                 }
             }
@@ -419,6 +482,8 @@ void App::render() {
         if (quest_log_open_)       draw_quest_log(renderer_);
         if (world_map_open_)       draw_world_map(renderer_);
         if (logs_.playing())       draw_log_overlay(renderer_);
+        if (paused_)               draw_pause_menu(renderer_);
+        if (action_toast_t_ > 0.0f) draw_action_toast(renderer_);
         if (room_intro_timer_ > 0.0f) draw_room_intro(renderer_);
         break;
     case game::Screen::GameOver:
@@ -433,14 +498,7 @@ void App::render() {
 }
 
 void App::draw_title(render::Renderer& r) const {
-    r.set_layer(render::Renderer::Layer::Alpha);
-    r.draw_quad({0,0}, {VIRTUAL_W,0}, {VIRTUAL_W,VIRTUAL_H}, {0,VIRTUAL_H}, rgba(8,8,16,255));
-
-    for (int i = 0; i < STAR_COUNT; ++i) {
-        const f32 tw = 0.6f + 0.4f * std::sin(platform::time_seconds() * 1.5f + f32(i));
-        r.draw_circle({STARS[i].x, STARS[i].y}, STARS[i].r,
-                      with_alpha(COLOR_CORE_INNER, u8(120.0f * tw)), 8);
-    }
+    render::draw_menu_background(r, f32(platform::time_seconds()), COLOR_CORE_INNER, 220);
 
     const f32 pulse = 0.5f + 0.5f * std::sin(platform::time_seconds() * 2.0f);
     r.draw_text_centered({VIRTUAL_W*0.5f, VIRTUAL_H*0.32f},
@@ -466,8 +524,9 @@ void App::draw_title(render::Renderer& r) const {
 }
 
 void App::draw_game_over(render::Renderer& r) const {
+    render::draw_menu_background(r, f32(platform::time_seconds()), COLOR_ENEMY_EDGE, 140);
     r.set_layer(render::Renderer::Layer::Alpha);
-    r.draw_quad({0,0}, {VIRTUAL_W,0}, {VIRTUAL_W,VIRTUAL_H}, {0,VIRTUAL_H}, rgba(40,0,0,200));
+    r.draw_quad({0,0}, {VIRTUAL_W,0}, {VIRTUAL_W,VIRTUAL_H}, {0,VIRTUAL_H}, rgba(40,0,0,120));
     r.draw_text_centered({VIRTUAL_W*0.5f, VIRTUAL_H*0.42f},
                          "DEFLECTOR OFFLINE", 8.0f, COLOR_ENEMY_CORE);
     r.draw_text_centered({VIRTUAL_W*0.5f, VIRTUAL_H*0.55f},
@@ -475,10 +534,11 @@ void App::draw_game_over(render::Renderer& r) const {
 }
 
 void App::draw_victory(render::Renderer& r) const {
+    render::draw_menu_background(r, f32(platform::time_seconds()), COLOR_CORE_INNER, 180);
     r.set_layer(render::Renderer::Layer::Alpha);
     const f32 t = clamp(victory_time_ / 2.0f, 0.0f, 1.0f);
     r.draw_quad({0,0}, {VIRTUAL_W,0}, {VIRTUAL_W,VIRTUAL_H}, {0,VIRTUAL_H},
-                rgba(10, 20, 10, u8(180 + 75 * t)));
+                rgba(10, 20, 10, u8(100 + 60 * t)));
     r.draw_text_centered({VIRTUAL_W*0.5f, VIRTUAL_H*0.38f},
                          "FOLD PRESERVED", 10.0f,
                          with_alpha(COLOR_CORE_INNER, u8(t * 255.0f)));
@@ -527,6 +587,58 @@ void App::draw_room_intro(render::Renderer& r) const {
     r.draw_line({0.0f, 180.0f}, {VIRTUAL_W, 180.0f}, 2.0f,
                 with_alpha(accent, u8(alpha * 160.0f)));
     r.set_layer(render::Renderer::Layer::Alpha);
+}
+
+void App::draw_pause_menu(render::Renderer& r) const {
+    r.set_layer(render::Renderer::Layer::Alpha);
+    r.draw_quad({0,0}, {VIRTUAL_W,0}, {VIRTUAL_W,VIRTUAL_H}, {0,VIRTUAL_H},
+                rgba(0, 0, 0, 210));
+
+    const f32 cx = VIRTUAL_W * 0.5f;
+    const f32 cy = VIRTUAL_H * 0.5f;
+
+    r.draw_text_centered({cx, cy - 220.0f}, "PAUSED", 9.0f, COLOR_CORE_INNER);
+
+    static const char* OPTIONS[3] = { "RESUME", "RESTART", "QUIT TO DESKTOP" };
+    for (int i = 0; i < 3; ++i) {
+        const f32 y = cy - 40.0f + f32(i) * 70.0f;
+        const bool sel = (i == pause_cursor_);
+        if (sel) {
+            const f32 pulse = 0.5f + 0.5f * std::sin(platform::time_seconds() * 5.0f);
+            r.set_layer(render::Renderer::Layer::Additive);
+            r.draw_circle({cx, y + 20.0f}, 220.0f,
+                          with_alpha(COLOR_CORE_EDGE, u8(20 + 20 * pulse)), 40);
+            r.set_layer(render::Renderer::Layer::Alpha);
+        }
+        const Color c = sel ? COLOR_CORE_INNER : with_alpha(COLOR_FACET_EDGE, 180);
+        r.draw_text_centered({cx, y}, OPTIONS[i], 4.0f, c);
+    }
+
+    r.draw_text_centered({cx, VIRTUAL_H - 120.0f},
+                         "UP/DOWN: SELECT   ENTER: CONFIRM   ESC: RESUME",
+                         2.2f, with_alpha(COLOR_FACET_EDGE, 200));
+}
+
+void App::draw_action_toast(render::Renderer& r) const {
+    if (action_toast_t_ <= 0.0f) return;
+
+    constexpr f32 MAXT = 1.4f;
+    const f32 t = clamp(action_toast_t_ / MAXT, 0.0f, 1.0f);
+    f32 alpha = 1.0f;
+    if (t > 0.6f) alpha = (1.0f - t) / 0.4f;
+    alpha = clamp(alpha, 0.0f, 1.0f);
+
+    const f32 cx = VIRTUAL_W * 0.5f;
+    const f32 cy = VIRTUAL_H * 0.78f;
+    const f32 w  = r.text_width(action_toast_text_, 3.0f);
+    r.set_layer(render::Renderer::Layer::Alpha);
+    r.draw_quad({cx - w * 0.5f - 30.0f, cy - 20.0f},
+                {cx + w * 0.5f + 30.0f, cy - 20.0f},
+                {cx + w * 0.5f + 30.0f, cy + 55.0f},
+                {cx - w * 0.5f - 30.0f, cy + 55.0f},
+                rgba(0, 0, 0, u8(180 * alpha)));
+    r.draw_text_centered({cx, cy}, action_toast_text_, 3.0f,
+                         with_alpha(action_toast_color_, u8(255 * alpha)));
 }
 
 } // namespace inc
