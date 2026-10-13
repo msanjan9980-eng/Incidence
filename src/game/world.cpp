@@ -515,6 +515,11 @@ bool World::collide_with_walls(Projectile& p) {
         p.pos = closest + n * (p.radius + 0.5f);
         ++p.bounces;
         --p.wall_bounces_left;
+        game_particles_.burst(p.pos, 5,
+                              80.0f, 200.0f, 0.12f, 0.25f,
+                              0.0f, TAU, 1.0f, 0.1f,
+                              COLOR_CORE_EDGE, COLOR_FACET_EDGE,
+                              fx::ParticleKind::Spark, 0.0f, 0.92f, 0.0f);
         return true;
     }
     return false;
@@ -540,6 +545,11 @@ bool World::resolve_warden_collisions(Projectile& p) {
         const int prev_phase = warden_.phase;
         warden_.damage(1);
         if (warden_.phase != prev_phase) {
+            game_particles_.burst(warden_.pos, 60,
+                                  240.0f, 640.0f, 0.6f, 1.3f,
+                                  0.0f, TAU, 2.4f, 0.2f,
+                                  COLOR_ENEMY_CORE, COLOR_ENEMY_EDGE,
+                                  fx::ParticleKind::Ember, 180.0f, 0.94f, 4.0f);
             audio::play_warden_phase();
             effects_.add_flash(COLOR_ENEMY_CORE, 0.35f);
             effects_.add_shake(22.0f, 0.55f);
@@ -695,6 +705,16 @@ bool World::resolve_collisions(Projectile& p) {
             if (t.hp <= 0) {
                 t.alive = false;
                 kills_++;
+            game_particles_.burst(t.pos, 44,
+                                  180.0f, 540.0f, 0.5f, 1.1f,
+                                  0.0f, TAU, 2.6f, 0.2f,
+                                  COLOR_ENEMY_CORE, COLOR_ENEMY_EDGE,
+                                  fx::ParticleKind::Ember, 200.0f, 0.93f, 5.0f);
+            game_particles_.burst(t.pos, 12,
+                                  120.0f, 320.0f, 0.3f, 0.6f,
+                                  0.0f, TAU, 1.4f, 0.2f,
+                                  COLOR_CORE_INNER, COLOR_CORE_EDGE,
+                                  fx::ParticleKind::Spark, 120.0f, 0.94f, 0.0f);
                 audio::play_enemy_death();
                 const int b = (p.bounces < 6) ? p.bounces : 6;
                 const int gained = 100 * (1 << b);

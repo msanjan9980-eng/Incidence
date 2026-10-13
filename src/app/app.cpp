@@ -4,6 +4,7 @@
 #include "app/banner.hpp"
 #include "game/save.hpp"
 #include "game/room.hpp"
+#include "render/field.hpp"
 
 #include "sokol_app.h"
 
@@ -636,9 +637,42 @@ void App::step(f32 dt) {
 
     case game::Screen::Victory: {
         victory_time_ += dt;
-        if (any_pressed && victory_time_ > 1.0f) {
-            screen_ = game::Screen::Title;
-            title_time_ = 0.0f;
+        if (victory_time_ > 0.5f) {
+            if (in.key_pressed[static_cast<int>(platform::Key::Up)]) {
+                if (end_cursor_ > 0) --end_cursor_;
+                else end_cursor_ = 2;
+            }
+            if (in.key_pressed[static_cast<int>(platform::Key::Down)]) {
+                if (end_cursor_ < 2) ++end_cursor_;
+                else end_cursor_ = 0;
+            }
+            if (in.key_pressed[static_cast<int>(platform::Key::Enter)]) {
+                if (end_cursor_ == 0) {
+                    end_cursor_ = 0;
+                    world_.reset();
+                    logs_ = game::LogState{};
+                    quests_ = game::QuestState{};
+                    last_room_shown_   = -1;
+                    last_warden_state_ = false;
+                    room_intro_timer_  = -1.0f;
+                    character_sheet_open_ = false;
+                    skill_tree_open_      = false;
+                    equipment_panel_open_ = false;
+                    log_archive_open_     = false;
+                    quest_log_open_       = false;
+                    world_map_open_       = false;
+                    screen_ = game::Screen::Playing;
+                } else if (end_cursor_ == 1) {
+                    end_cursor_ = 0;
+                    logs_ = game::LogState{};
+                    quests_ = game::QuestState{};
+                    screen_ = game::Screen::MainMenu;
+                    main_menu_time_ = 0.0f;
+                    menu_cursor_ = 0;
+                } else {
+                    running_ = false;
+                }
+            }
         }
         break;
     }
@@ -693,29 +727,77 @@ void App::render() {
 }
 
 void App::draw_title(render::Renderer& r) const {
-    render::draw_menu_background(r, f32(platform::time_seconds()), COLOR_CORE_INNER, 220);
+    const f32 t = f32(platform::time_seconds());
+    const f32 cx = f32(VIRTUAL_W) * 0.5f;
+    const f32 cy = f32(VIRTUAL_H) * 0.42f;
 
-    const f32 pulse = 0.5f + 0.5f * std::sin(platform::time_seconds() * 2.0f);
-    r.draw_text_centered({VIRTUAL_W*0.5f, VIRTUAL_H*0.32f},
-                         "INCIDENCE", 12.0f, COLOR_CORE_INNER);
-    r.draw_text_centered({VIRTUAL_W*0.5f, VIRTUAL_H*0.42f},
-                         "REFLECT OR DIE", 3.5f,
-                         with_alpha(COLOR_FACET_EDGE, u8(180 + 60 * pulse)));
-
-    r.set_layer(render::Renderer::Layer::Additive);
-    r.draw_circle({VIRTUAL_W*0.5f, VIRTUAL_H*0.32f}, 400.0f,
-                  with_alpha(COLOR_CORE_EDGE, 20), 48);
+    // --- Backdrop ---
     r.set_layer(render::Renderer::Layer::Alpha);
+    r.draw_quad({0, 0}, {f32(VIRTUAL_W), 0},
+                {f32(VIRTUAL_W), f32(VIRTUAL_H)}, {0, f32(VIRTUAL_H)},
+                rgba(3, 8, 14, 255));
 
-    if (title_time_ > 0.4f) {
-        r.draw_text_centered({VIRTUAL_W*0.5f, VIRTUAL_H*0.66f},
-                             "PRESS ANY KEY TO BEGIN", 3.0f,
-                             with_alpha(COLOR_CORE_EDGE, u8(pulse * 255.0f)));
+    fx::hex_grid(r, t * 0.25f, COLOR_CORE_EDGE, 0.25f, 100.0f, 12, 20);
+    fx::constellation(r, t * 0.5f, COLOR_CORE_INNER, 0.35f, 48, 7.0f);
+
+    // --- Title block ---
+    const char* title = "INCIDENCE";
+    const int   tlen  = 9;
+    const f32   tsize = 11.0f;
+    const f32   tadv  = r.text_width("XX", tsize) - r.text_width("X", tsize);
+    const f32   tw    = r.text_width(title, tsize);
+    f32 px = cx - tw * 0.5f;
+    for (int i = 0; i < tlen; ++i) {
+        const f32 enter = clamp((t - (0.05f + f32(i) * 0.04f)) / 0.35f, 0.0f, 1.0f);
+        if (enter > 0.0f) {
+            char one[2] = { title[i], 0 };
+            const f32 slide = (1.0f - enter) * -22.0f;
+            r.draw_text({px + 3.0f, cy - 100.0f + slide + 3.0f}, one, tsize,
+                        with_alpha(COLOR_ENEMY_EDGE, u8(60 * enter)));
+            r.draw_text({px - 3.0f, cy - 100.0f + slide - 3.0f}, one, tsize,
+                        with_alpha(COLOR_CORE_INNER, u8(60 * enter)));
+            r.draw_text({px, cy - 100.0f + slide}, one, tsize,
+                        with_alpha(COLOR_CORE_INNER, u8(255 * enter)));
+        }
+        px += tadv;
     }
 
-    r.draw_text_centered({VIRTUAL_W*0.5f, VIRTUAL_H - 50.0f},
-                         "TAB: STATS   K: SKILLS   I: GEAR   L: LOGS   J: QUESTS   M: MAP",
-                         2.2f, with_alpha(COLOR_FACET_EDGE, 180));
+    // Subtitle + divider
+    const f32 pulse = 0.5f + 0.5f * std::sin(t * 2.0f);
+    r.draw_text_centered({cx, cy + 20.0f}, "REFLECT OR DIE", 3.2f,
+                         with_alpha(COLOR_FACET_EDGE, u8(180 + 60 * pulse)));
+    r.draw_line({cx - 320.0f, cy + 70.0f}, {cx + 320.0f, cy + 70.0f}, 1.0f,
+                with_alpha(COLOR_CORE_EDGE, 100));
+
+    // Additive halo behind the title
+    r.set_layer(render::Renderer::Layer::Additive);
+    r.draw_circle({cx, cy - 60.0f}, 420.0f + std::sin(t * 1.4f) * 20.0f,
+                  with_alpha(COLOR_CORE_EDGE, u8(18.0f)), 48);
+    r.set_layer(render::Renderer::Layer::Alpha);
+
+    fx::orbiting_cloud(r, {cx, cy - 40.0f}, t, COLOR_CORE_INNER, 0.55f, 36, 220.0f, 420.0f);
+
+    // --- Press any key prompt ---
+    if (title_time_ > 0.4f) {
+        const f32 p2 = 0.5f + 0.5f * std::sin(t * 3.0f);
+        r.set_layer(render::Renderer::Layer::Additive);
+        r.draw_circle({cx, cy + 190.0f}, 260.0f + p2 * 20.0f,
+                      with_alpha(COLOR_CORE_EDGE, u8(15.0f + 15.0f * p2)), 40);
+        r.set_layer(render::Renderer::Layer::Alpha);
+        r.draw_text_centered({cx, cy + 190.0f}, "PRESS ANY KEY TO BEGIN", 3.0f,
+                             with_alpha(COLOR_CORE_INNER, u8(180 + 75 * p2)));
+    }
+
+    // --- Footer ---
+    r.draw_text_centered({cx, f32(VIRTUAL_H) - 60.0f},
+        "TAB: STATS   K: SKILLS   I: GEAR   L: LOGS   J: QUESTS   M: MAP",
+        2.0f, with_alpha(COLOR_FACET_EDGE, 160));
+
+    // --- Post-FX ---
+    fx::radial_rings(r, {cx, cy - 60.0f}, t, COLOR_CORE_EDGE, 0.55f, 2, 520.0f);
+    fx::scanlines(r, 0.55f, 4.0f, 26);
+    fx::film_grain(r, t, 0.4f, 180, 1.0f);
+    fx::vignette(r, 1.0f, 180.0f, 10);
 }
 
 void App::draw_game_over(render::Renderer& r) const {
@@ -744,23 +826,32 @@ void App::draw_game_over(render::Renderer& r) const {
 }
 
 void App::draw_victory(render::Renderer& r) const {
-    render::draw_menu_background(r, f32(platform::time_seconds()), COLOR_CORE_INNER, 180);
+    const f32 t = f32(platform::time_seconds());
+    const f32 cx = f32(VIRTUAL_W) * 0.5f;
     r.set_layer(render::Renderer::Layer::Alpha);
-    const f32 t = clamp(victory_time_ / 2.0f, 0.0f, 1.0f);
-    r.draw_quad({0,0}, {VIRTUAL_W,0}, {VIRTUAL_W,VIRTUAL_H}, {0,VIRTUAL_H},
-                rgba(10, 20, 10, u8(100 + 60 * t)));
-    r.draw_text_centered({VIRTUAL_W*0.5f, VIRTUAL_H*0.38f},
-                         "FOLD PRESERVED", 10.0f,
-                         with_alpha(COLOR_CORE_INNER, u8(t * 255.0f)));
-    r.draw_text_centered({VIRTUAL_W*0.5f, VIRTUAL_H*0.50f},
-                         "KITE-9 ENDURES", 4.0f,
-                         with_alpha(COLOR_FACET_EDGE, u8(t * 220.0f)));
-    if (victory_time_ > 1.0f) {
-        const f32 pulse = 0.5f + 0.5f * std::sin(platform::time_seconds() * 3.0f);
-        r.draw_text_centered({VIRTUAL_W*0.5f, VIRTUAL_H*0.62f},
-                             "PRESS ANY KEY", 3.0f,
-                             with_alpha(COLOR_CORE_EDGE, u8(pulse * 255.0f)));
+    r.draw_quad({0,0}, {VIRTUAL_W,0}, {VIRTUAL_W,VIRTUAL_H}, {0,VIRTUAL_H}, rgba(3,20,10,180));
+    fx::radial_rings(r, {cx, f32(VIRTUAL_H)*0.35f}, t, COLOR_CORE_INNER, 0.8f, 3, 700.0f);
+    r.draw_text_centered({cx, VIRTUAL_H*0.28f}, "SIGNAL RESTORED", 8.0f, COLOR_CORE_INNER);
+    r.draw_text_centered({cx, VIRTUAL_H*0.38f}, "THE WARDEN IS SILENT", 2.8f,
+                         with_alpha(COLOR_CORE_EDGE, 220));
+    static const char* OPTIONS[3] = { "NEW RUN", "RETURN TO MAIN MENU", "QUIT TO DESKTOP" };
+    for (int i = 0; i < 3; ++i) {
+        const f32 y = VIRTUAL_H * 0.55f + f32(i) * 70.0f;
+        const bool sel = (i == end_cursor_);
+        if (sel) {
+            const f32 pulse = 0.5f + 0.5f * std::sin(t * 5.0f);
+            r.set_layer(render::Renderer::Layer::Additive);
+            r.draw_circle({cx, y + 20.0f}, 220.0f,
+                          with_alpha(COLOR_CORE_INNER, u8(20 + 20 * pulse)), 40);
+            r.set_layer(render::Renderer::Layer::Alpha);
+        }
+        const Color c = sel ? COLOR_CORE_INNER : with_alpha(COLOR_CORE_EDGE, 180);
+        r.draw_text_centered({cx, y}, OPTIONS[i], 3.2f, c);
     }
+    r.draw_text_centered({cx, VIRTUAL_H - 80.0f},
+                         "UP/DOWN: SELECT   ENTER: CONFIRM", 2.0f,
+                         with_alpha(COLOR_FACET_EDGE, 200));
+    fx::scanlines(r, 0.5f, 4.0f, 22);
 }
 
 void App::draw_room_intro(render::Renderer& r) const {
@@ -979,6 +1070,7 @@ void App::draw_room_intro(render::Renderer& r) const {
 
 
 void App::draw_pause_menu(render::Renderer& r) const {
+    const f32 t = f32(platform::time_seconds());
     r.set_layer(render::Renderer::Layer::Alpha);
     r.draw_quad({0,0}, {VIRTUAL_W,0}, {VIRTUAL_W,VIRTUAL_H}, {0,VIRTUAL_H},
                 rgba(0, 0, 0, 210));
