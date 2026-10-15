@@ -55,6 +55,59 @@ Menu navigation: UP/DOWN to select, ENTER to confirm, ESC to back out.
 - CMake 3.20+
 - MinGW-w64 (GCC 11+) - tested on Windows
 - Git (CMake fetches sokol via FetchContent)
+- Ninja (optional, but faster than Make)
+
+### Install prerequisites (Windows)
+
+**Option 1 - winget (Windows 10/11, easiest):**
+
+    winget install Kitware.CMake
+    winget install Git.Git
+    winget install BrechtSanders.WinLibs.POSIX.UCRT
+    winget install Ninja-build.Ninja
+
+Then restart your terminal. Verify with:
+
+    cmake --version
+    g++ --version
+    git --version
+    ninja --version
+
+**Option 2 - MSYS2 (full Unix-like toolchain):**
+
+Download and install MSYS2 from https://www.msys2.org/, then in the MSYS2 MINGW64 shell:
+
+    pacman -Syu
+    pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja git
+
+Add `C:\msys64\mingw64\bin` to your system PATH.
+
+**Option 3 - manual (any Windows version):**
+
+- CMake: https://cmake.org/download/ (Windows x64 Installer)
+- MinGW-w64: https://winlibs.com/ (extract to `C:\mingw64`, add `C:\mingw64\bin` to PATH)
+- Git: https://git-scm.com/download/win
+- Ninja: https://github.com/ninja-build/ninja/releases (drop `ninja.exe` into `C:\mingw64\bin`)
+
+### Install prerequisites (macOS)
+
+    brew install cmake git
+    xcode-select --install
+
+### Install prerequisites (Linux)
+
+Debian / Ubuntu:
+
+    sudo apt update
+    sudo apt install build-essential cmake git ninja-build
+
+Arch:
+
+    sudo pacman -S base-devel cmake git ninja
+
+Fedora:
+
+    sudo dnf install gcc-c++ cmake git ninja-build
 
 ### Build
 
