@@ -32,7 +32,7 @@ The math is not decoration. It's the whole game.
 
 | Input | Action |
 |---|---|
-| `W` `A` `S` `D` | Move |
+| `Arrow Keys` | Move |
 | `Q` / `E` | Rotate shield |
 | `Space` | Dash |
 | `Esc` | Pause / back |
